@@ -10,7 +10,6 @@ import {
   AlertTriangle, 
   Pill, 
   Calendar, 
-  Sparkles, 
   ChevronRight,
   ShieldCheck,
   CheckCircle2
@@ -29,6 +28,7 @@ export const TodayTab: React.FC<TodayTabProps> = ({ onNavigateToTab, onOpenAddMe
     todayWaterPercentage,
     waterSettings,
     addWater,
+    undoLastWaterLog,
     recordDose,
     undoDose,
     appSettings,
@@ -74,6 +74,12 @@ export const TodayTab: React.FC<TodayTabProps> = ({ onNavigateToTab, onOpenAddMe
             Merhaba, {appSettings.userName || 'Kullanıcı'} 👋
           </h2>
         </div>
+
+        {/* Ad-Free Assurance tag */}
+        <div className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-800 text-xs font-semibold">
+          <ShieldCheck className="w-3.5 h-3.5 text-teal-600" />
+          <span>%100 Reklamsız & Özel</span>
+        </div>
       </div>
 
       {/* Low Stock Warning Banner */}
@@ -84,7 +90,7 @@ export const TodayTab: React.FC<TodayTabProps> = ({ onNavigateToTab, onOpenAddMe
           </div>
           <div className="flex-1 min-w-0">
             <h4 className="text-sm font-bold text-amber-900">İlaç Stoğu Azalıyor!</h4>
-            <p className="text-xs text-amber-700 mt-0.5">
+            <p className="text-xs text-amber-800 mt-0.5">
               {lowStockMeds.map((m) => `${m.name} (${m.stockCount} adet kaldı)`).join(', ')}. Eczaneden temin etmeyi unutmayın.
             </p>
           </div>
@@ -134,11 +140,24 @@ export const TodayTab: React.FC<TodayTabProps> = ({ onNavigateToTab, onOpenAddMe
             </div>
           </div>
 
-          {/* Quick add water buttons */}
+          {/* Quick add water buttons & Undo */}
           <div className="space-y-1.5">
-            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-              Hızlı Su Ekle
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+                Hızlı Su Ekle
+              </span>
+              {todayWaterTotal > 0 && (
+                <button
+                  type="button"
+                  onClick={undoLastWaterLog}
+                  title="Son eklenen suyu geri al"
+                  className="text-[11px] font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1 transition"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Son Eklemeyi Geri Al</span>
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-4 gap-2">
               {[200, 250, 330, 500].map((ml) => (
                 <button
@@ -243,7 +262,7 @@ export const TodayTab: React.FC<TodayTabProps> = ({ onNavigateToTab, onOpenAddMe
           <h3 className="text-lg font-bold text-slate-900">Günün İlaç Programı</h3>
           <button
             onClick={onOpenAddMed}
-            className="flex items-center gap-1 text-xs font-bold text-teal-600 hover:text-teal-700 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-xl transition"
+            className="flex items-center gap-1 text-xs font-bold text-teal-700 hover:text-teal-900 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-xl border border-teal-200 transition"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Yeni İlaç Ekle</span>
@@ -251,7 +270,7 @@ export const TodayTab: React.FC<TodayTabProps> = ({ onNavigateToTab, onOpenAddMe
         </div>
 
         {todayPillsDue.length === 0 ? (
-          <div className="bg-white rounded-3xl p-8 border border-slate-200/80 text-center space-y-3">
+          <div className="bg-white rounded-3xl p-8 border border-slate-200/80 text-center space-y-3 shadow-xs">
             <div className="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center mx-auto">
               <Pill className="w-6 h-6" />
             </div>
@@ -286,12 +305,12 @@ export const TodayTab: React.FC<TodayTabProps> = ({ onNavigateToTab, onOpenAddMe
               return (
                 <div
                   key={key}
-                  className={`bg-white rounded-2xl p-4 border transition-all ${
+                  className={`rounded-2xl p-4 border transition-all ${
                     isTaken
-                      ? 'border-emerald-200 bg-emerald-50/20'
+                      ? 'border-emerald-200 bg-emerald-50/30'
                       : isSkipped
-                      ? 'border-slate-200 opacity-60'
-                      : 'border-slate-200/90 shadow-xs hover:border-teal-300'
+                      ? 'border-slate-200 bg-white opacity-60'
+                      : 'border-slate-200/90 bg-white shadow-xs hover:border-teal-300'
                   }`}
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -306,8 +325,10 @@ export const TodayTab: React.FC<TodayTabProps> = ({ onNavigateToTab, onOpenAddMe
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h4
-                            className={`text-base font-bold text-slate-900 ${
-                              isTaken ? 'line-through text-slate-500' : ''
+                            className={`text-base font-bold ${
+                              isTaken
+                                ? 'line-through text-slate-400'
+                                : 'text-slate-900'
                             }`}
                           >
                             {med.name}
@@ -327,7 +348,7 @@ export const TodayTab: React.FC<TodayTabProps> = ({ onNavigateToTab, onOpenAddMe
                               <span
                                 className={
                                   med.stockCount <= med.stockAlertThreshold
-                                    ? 'text-amber-600 font-bold'
+                                    ? 'text-amber-700 font-bold'
                                     : ''
                                 }
                               >
@@ -338,7 +359,7 @@ export const TodayTab: React.FC<TodayTabProps> = ({ onNavigateToTab, onOpenAddMe
                         </div>
 
                         {med.notes && (
-                          <p className="text-[11px] text-slate-400 italic mt-0.5 line-clamp-1">
+                          <p className="text-[11px] text-slate-500 italic mt-0.5 line-clamp-1">
                             {med.notes}
                           </p>
                         )}
@@ -430,7 +451,7 @@ export const TodayTab: React.FC<TodayTabProps> = ({ onNavigateToTab, onOpenAddMe
                   </div>
 
                   {isSnoozed && log?.snoozeUntil && (
-                    <div className="mt-2 text-xs font-semibold text-amber-700 bg-amber-50/80 px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
+                    <div className="mt-2 text-xs font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       <span>
                         Saat {new Date(log.snoozeUntil).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}

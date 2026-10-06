@@ -1,7 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Medication, MedicationColor, MedicationForm, MealTiming } from '../types';
 import { useApp } from '../context/AppContext';
-import { X, Plus, Trash2, Clock, Pill, PackageCheck, AlertCircle, Camera, Sparkles, Loader2 } from 'lucide-react';
+import { 
+  X, 
+  Plus, 
+  Trash2, 
+  Clock, 
+  Pill, 
+  PackageCheck, 
+  AlertCircle, 
+  Camera, 
+  Sparkles, 
+  Loader2, 
+  Search, 
+  Check, 
+  ArrowRight,
+  Info
+} from 'lucide-react';
+import { searchMedicationVariants, MedicationVariant } from '../services/aiMedicationService';
 
 interface AddEditMedModalProps {
   initialMed?: Medication | null;
@@ -43,6 +59,8 @@ const daysMap = [
   { day: 0, label: 'Paz' },
 ];
 
+const commonSuggestions = ['Coraspin', 'Parol', 'Nexium', 'Augmentin', 'Lansor', 'Euthyrox', 'Benexol'];
+
 export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
   initialMed,
   isOpen,
@@ -65,10 +83,108 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
   );
   const [notes, setNotes] = useState(initialMed?.notes || '');
   const [error, setError] = useState('');
+
+  // AI Assistant States
+  const [aiMode, setAiMode] = useState<'search' | 'scan'>('search');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<MedicationVariant[]>([]);
+  const [selectedVariantName, setSelectedVariantName] = useState<string | null>(null);
+
+  // Vision scanner states
   const [isScanning, setIsScanning] = useState(false);
   const [scanSuccessMsg, setScanSuccessMsg] = useState('');
-  const cameraInputRef = React.useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Sync form when initialMed changes
+  React.useEffect(() => {
+    if (initialMed) {
+      setName(initialMed.name);
+      setDosage(initialMed.dosage);
+      setForm(initialMed.form);
+      setColor(initialMed.color);
+      setTimes(initialMed.times);
+      setSelectedDays(initialMed.daysOfWeek || []);
+      setInstructions(initialMed.instructions);
+      setStockEnabled(initialMed.stockEnabled);
+      setStockCount(initialMed.stockCount);
+      setStockAlertThreshold(initialMed.stockAlertThreshold);
+      setNotes(initialMed.notes || '');
+    } else {
+      setName('');
+      setDosage('1 Tablet');
+      setForm('tablet');
+      setColor('emerald');
+      setTimes(['09:00']);
+      setSelectedDays([]);
+      setInstructions('after_meal');
+      setStockEnabled(true);
+      setStockCount(30);
+      setStockAlertThreshold(5);
+      setNotes('');
+      setSearchResults([]);
+      setSelectedVariantName(null);
+      setSearchQuery('');
+    }
+    setError('');
+    setScanSuccessMsg('');
+  }, [initialMed, isOpen]);
+
+  if (!isOpen) return null;
+
+  // Handle AI Drug Search
+  const handlePerformSearch = async (termToSearch?: string) => {
+    const q = (termToSearch || searchQuery).trim();
+    if (!q) {
+      setError('Lütfen aramak istediğiniz ilacın adını giriniz.');
+      return;
+    }
+
+    setIsSearching(true);
+    setError('');
+    setScanSuccessMsg('');
+    setSelectedVariantName(null);
+
+    try {
+      const results = await searchMedicationVariants(q, appSettings.geminiApiKey);
+      if (results && results.length > 0) {
+        setSearchResults(results);
+      } else {
+        setError(`"${q}" için sonuç bulunamadı. Lütfen ilacın adını kontrol ediniz.`);
+      }
+    } catch (err: any) {
+      setError(err.message || 'İlaç aranırken bir hata oluştu.');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Select variant and auto-populate all fields
+  const handleSelectVariant = (variant: MedicationVariant) => {
+    // Extract base drug name (e.g., "Coraspin 100 mg Enterik Kaplı Tablet" -> extract "Coraspin" or use name)
+    const baseName = variant.name.split(' ')[0] || variant.name;
+    setName(baseName);
+    setDosage(variant.dosage);
+    if (variant.form && formOptions.some((f) => f.id === variant.form)) {
+      setForm(variant.form);
+    }
+    if (variant.instructions) {
+      setInstructions(variant.instructions);
+    }
+    if (variant.stockCount) {
+      setStockEnabled(true);
+      setStockCount(variant.stockCount);
+    }
+    if (variant.notes) {
+      setNotes(variant.notes);
+    }
+
+    setSelectedVariantName(variant.name);
+    setScanSuccessMsg(`✓ ${variant.name} seçildi! Dozaj, kullanım şekli ve açıklamalar otomatik dolduruldu.`);
+    setTimeout(() => setScanSuccessMsg(''), 7000);
+  };
+
+  // Handle Photo Scan
   const handleImageCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -99,7 +215,7 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
 
           const result = await response.json();
           if (!response.ok || !result.success) {
-            throw new Error(result.error || 'İlaç görseli okunamadı.');
+            throw new Error(result.error || 'İlaç kutusu okunamadı.');
           }
 
           const { data } = result;
@@ -119,10 +235,10 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
             setNotes((prev) => (prev ? `${prev} • ${data.notes}` : data.notes));
           }
 
-          setScanSuccessMsg('Yapay zeka ilaç bilgilerini başarıyla okudu ve forma aktardı!');
-          setTimeout(() => setScanSuccessMsg(''), 5000);
+          setScanSuccessMsg('✓ Yapay zeka ilaç kutusunu başarıyla tanıdı ve forma aktardı!');
+          setTimeout(() => setScanSuccessMsg(''), 6000);
         } catch (fetchErr: any) {
-          setError(fetchErr.message || 'Yapay zeka taraması sırasında hata oluştu.');
+          setError(fetchErr.message || 'Görsel işlenirken bir sorun oluştu.');
         } finally {
           setIsScanning(false);
         }
@@ -137,8 +253,6 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
       cameraInputRef.current.value = '';
     }
   };
-
-  if (!isOpen) return null;
 
   const handleAddTime = () => {
     setTimes((prev) => [...prev, '12:00']);
@@ -193,97 +307,266 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in">
-      <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 max-h-[92vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+      <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200/90 max-h-[92vh] flex flex-col overflow-hidden">
         {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-teal-50 dark:bg-slate-800 text-teal-600 dark:text-teal-400">
+            <div className="p-2 rounded-xl bg-teal-50 text-teal-600">
               <Pill className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-slate-900 dark:text-white text-lg">
+              <h3 className="font-bold text-slate-900 text-lg">
                 {initialMed ? 'İlacı Düzenle' : 'Yeni İlaç / Vitamin Ekle'}
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Hatırlatma saatleri ve doz detayları</p>
+              <p className="text-xs text-slate-500 font-medium">Hatırlatma saatleri ve doz detayları</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            className="p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Modal Content Form */}
-        <form onSubmit={handleSubmit} className="overflow-y-auto p-6 space-y-5 flex-1">
-          {/* AI Medication Vision Card */}
-          <div className="bg-gradient-to-r from-teal-500/10 via-cyan-500/10 to-emerald-500/10 dark:from-teal-950/40 dark:via-cyan-950/40 dark:to-emerald-950/40 border border-teal-200/90 dark:border-teal-800/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                {isScanning ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  <Camera className="w-5 h-5" />
-                )}
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                  <span>Yapay Zeka ile İlacı Tara</span>
-                  <span className="text-[10px] font-extrabold px-1.5 py-0.2 bg-teal-100 dark:bg-teal-900 text-teal-800 dark:text-teal-300 rounded-md">
-                    Otomatik
-                  </span>
-                </h4>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  İlaç kutusunun veya prospektüsünün fotoğrafını yükleyin, bilgileri otomatik doldursun.
-                </p>
+        <form onSubmit={handleSubmit} className="overflow-y-auto p-6 space-y-5 flex-1 bg-white">
+          {/* AI Smart Assistant Box */}
+          <div className="rounded-2xl border border-teal-200 bg-gradient-to-br from-teal-50/80 via-emerald-50/40 to-teal-50/50 p-4 space-y-3 shadow-xs">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-teal-600 text-white shadow-xs">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-teal-950 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>Yapay Zeka ile Otomatik İlaç Doldurma</span>
+                    <span className="text-[10px] font-black px-1.5 py-0.2 bg-teal-200/80 text-teal-900 rounded-md">
+                      Akıllı
+                    </span>
+                  </h4>
+                  <p className="text-[11px] text-teal-800/80">
+                    İlacın adını yazın veya kutusunu fotoğraflayın; yapay zeka tüm varyantları ve kullanım talimatlarını getirsin.
+                  </p>
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
-              <input
-                type="file"
-                ref={cameraInputRef}
-                accept="image/*"
-                capture="environment"
-                onChange={handleImageCapture}
-                className="hidden"
-                id="med-camera-input"
-              />
-              <label
-                htmlFor="med-camera-input"
-                className={`cursor-pointer px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs ${
-                  isScanning
-                    ? 'bg-slate-300 text-slate-600 cursor-not-allowed'
-                    : 'bg-teal-600 hover:bg-teal-700 text-white active:scale-95'
+            {/* AI Mode Selector Tabs */}
+            <div className="flex rounded-xl bg-teal-100/70 p-1 gap-1">
+              <button
+                type="button"
+                onClick={() => setAiMode('search')}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                  aiMode === 'search'
+                    ? 'bg-white text-teal-900 shadow-xs'
+                    : 'text-teal-800 hover:text-teal-950'
                 }`}
               >
-                {isScanning ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Okunuyor...</span>
-                  </>
-                ) : (
-                  <>
-                    <Camera className="w-3.5 h-3.5" />
-                    <span>Fotoğraf Çek / Yükle</span>
-                  </>
-                )}
-              </label>
+                <Search className="w-3.5 h-3.5 text-teal-600" />
+                <span>İsimle Ara (Örn: Coraspin)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAiMode('scan')}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                  aiMode === 'scan'
+                    ? 'bg-white text-teal-900 shadow-xs'
+                    : 'text-teal-800 hover:text-teal-950'
+                }`}
+              >
+                <Camera className="w-3.5 h-3.5 text-teal-600" />
+                <span>Fotoğrafla Tara (OCR)</span>
+              </button>
             </div>
+
+            {/* AI Mode 1: Search by Name */}
+            {aiMode === 'search' && (
+              <div className="space-y-2.5 pt-1">
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handlePerformSearch();
+                        }
+                      }}
+                      placeholder="İlaç veya etken madde adı (örn: Coraspin, Parol, Nexium)..."
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-teal-300 bg-white text-slate-900 text-xs font-medium placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-teal-500 focus:border-teal-500 shadow-xs"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePerformSearch()}
+                    disabled={isSearching}
+                    className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 active:scale-95 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5 shrink-0 disabled:opacity-60"
+                  >
+                    {isSearching ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Aranıyor...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Varyantları Bul</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Popular Drug Quick Chips */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] font-bold text-teal-900">Örnekler:</span>
+                  {commonSuggestions.map((sug) => (
+                    <button
+                      key={sug}
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery(sug);
+                        handlePerformSearch(sug);
+                      }}
+                      className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-white border border-teal-200 text-teal-800 hover:bg-teal-100 hover:border-teal-300 transition shadow-2xs"
+                    >
+                      {sug}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Search Results List */}
+                {searchResults.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-teal-200/80 animate-in fade-in">
+                    <div className="flex items-center justify-between text-xs font-bold text-teal-950">
+                      <span>Bulunan İlaç Tipleri & Varyantları ({searchResults.length}):</span>
+                      <span className="text-[11px] text-teal-700 font-normal">
+                        Forma aktarmak için birine tıklayın 👇
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {searchResults.map((variant, idx) => {
+                        const isSelected = selectedVariantName === variant.name;
+                        return (
+                          <div
+                            key={idx}
+                            onClick={() => handleSelectVariant(variant)}
+                            className={`p-3 rounded-xl border transition-all cursor-pointer text-left ${
+                              isSelected
+                                ? 'bg-teal-100/90 border-teal-500 shadow-xs'
+                                : 'bg-white hover:bg-teal-50/60 border-teal-200 hover:border-teal-400'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <h5 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                                  <span>{variant.name}</span>
+                                  {isSelected && (
+                                    <span className="text-[10px] font-bold px-1.5 py-0.2 bg-teal-600 text-white rounded-md flex items-center gap-0.5">
+                                      <Check className="w-2.5 h-2.5" /> Seçildi
+                                    </span>
+                                  )}
+                                </h5>
+
+                                <div className="flex items-center gap-1.5 text-[11px] text-slate-600 font-medium mt-1 flex-wrap">
+                                  <span className="px-1.5 py-0.5 rounded-md bg-teal-50 border border-teal-200 text-teal-800 font-bold">
+                                    {variant.dosage}
+                                  </span>
+                                  <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700">
+                                    {formOptions.find((f) => f.id === variant.form)?.label || variant.form}
+                                  </span>
+                                  <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700">
+                                    {variant.instructions === 'before_meal' ? 'Aç Karnına' : variant.instructions === 'after_meal' ? 'Tok Karnına' : 'Yemekle'}
+                                  </span>
+                                  {variant.stockCount > 0 && (
+                                    <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700">
+                                      {variant.stockCount} Adet/Kutu
+                                    </span>
+                                  )}
+                                </div>
+
+                                {variant.notes && (
+                                  <p className="text-[11px] text-slate-600 mt-1.5 leading-relaxed bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                    <strong>Açıklama:</strong> {variant.notes}
+                                  </p>
+                                )}
+                              </div>
+
+                              <button
+                                type="button"
+                                className="px-2.5 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold text-[11px] shadow-2xs shrink-0 flex items-center gap-1"
+                              >
+                                <span>Seç</span>
+                                <ArrowRight className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* AI Mode 2: Camera Scan */}
+            {aiMode === 'scan' && (
+              <div className="space-y-2 pt-1">
+                <p className="text-xs text-slate-600">
+                  İlaç kutusunun veya prospektüsünün fotoğrafını yükleyin, yapay zeka adı, dozu ve kullanım şeklini okusun:
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="file"
+                    ref={cameraInputRef}
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handleImageCapture}
+                    className="hidden"
+                    id="med-camera-input-box"
+                  />
+                  <label
+                    htmlFor="med-camera-input-box"
+                    className={`cursor-pointer px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-xs ${
+                      isScanning
+                        ? 'bg-slate-300 text-slate-600 cursor-not-allowed'
+                        : 'bg-teal-600 hover:bg-teal-700 text-white active:scale-95'
+                    }`}
+                  >
+                    {isScanning ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Kutu Okunuyor...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Camera className="w-4 h-4" />
+                        <span>Fotoğraf Çek veya Dosya Seç</span>
+                      </>
+                    )}
+                  </label>
+                </div>
+              </div>
+            )}
           </div>
 
+          {/* Success / Error Messages */}
           {scanSuccessMsg && (
-            <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs font-bold flex items-center gap-2 animate-in fade-in">
-              <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+              <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>{scanSuccessMsg}</span>
             </div>
           )}
 
           {error && (
-            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
               <span>{error}</span>
             </div>
           )}
@@ -291,7 +574,7 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
           {/* Name & Dosage */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="sm:col-span-2 space-y-1">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+              <label className="text-xs font-bold text-slate-800 uppercase tracking-wider">
                 İlaç veya Vitamin Adı *
               </label>
               <input
@@ -301,22 +584,22 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
                   setName(e.target.value);
                   setError('');
                 }}
-                placeholder="Örn: Nexium, B12, Parol, Magnezyum"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 text-sm font-medium outline-hidden transition placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                placeholder="Örn: Coraspin, Parol, Nexium, B12"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 text-sm font-semibold outline-hidden transition placeholder:text-slate-400"
                 required
               />
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+              <label className="text-xs font-bold text-slate-800 uppercase tracking-wider">
                 Doz / Miktar
               </label>
               <input
                 type="text"
                 value={dosage}
                 onChange={(e) => setDosage(e.target.value)}
-                placeholder="Örn: 1 Tablet, 500mg"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 text-sm font-medium outline-hidden transition placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                placeholder="Örn: 100 mg, 1 Tablet"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 text-sm font-semibold outline-hidden transition placeholder:text-slate-400"
               />
             </div>
           </div>
@@ -324,13 +607,13 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
           {/* Form & Color */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+              <label className="text-xs font-bold text-slate-800 uppercase tracking-wider">
                 İlaç Türü
               </label>
               <select
                 value={form}
                 onChange={(e) => setForm(e.target.value as MedicationForm)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 text-sm font-medium outline-hidden transition"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 text-sm font-semibold outline-hidden transition"
               >
                 {formOptions.map((opt) => (
                   <option key={opt.id} value={opt.id}>
@@ -341,7 +624,7 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+              <label className="text-xs font-bold text-slate-800 uppercase tracking-wider">
                 Renk Etiketi
               </label>
               <div className="flex items-center gap-2 pt-1 flex-wrap">
@@ -351,7 +634,7 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
                     type="button"
                     onClick={() => setColor(c.id)}
                     className={`w-7 h-7 rounded-full ${c.bg} transition-transform ${
-                      color === c.id ? 'ring-3 ring-slate-900 dark:ring-teal-400 ring-offset-2 dark:ring-offset-slate-900 scale-110' : 'opacity-80 hover:opacity-100'
+                      color === c.id ? 'ring-3 ring-slate-900 ring-offset-2 scale-110' : 'opacity-80 hover:opacity-100'
                     }`}
                     title={c.label}
                   />
@@ -362,7 +645,7 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
 
           {/* Instructions (Meal timing) */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+            <label className="text-xs font-bold text-slate-800 uppercase tracking-wider">
               Kullanım Şekli
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -376,10 +659,10 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
                   key={item.id}
                   type="button"
                   onClick={() => setInstructions(item.id as MealTiming)}
-                  className={`py-2 px-2.5 rounded-xl border text-xs font-semibold text-center transition ${
+                  className={`py-2 px-2.5 rounded-xl border text-xs font-bold text-center transition ${
                     instructions === item.id
-                      ? 'bg-teal-50 dark:bg-slate-800 border-teal-500 text-teal-800 dark:text-teal-300'
-                      : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                      ? 'bg-teal-50 border-teal-600 text-teal-900 shadow-2xs'
+                      : 'border-slate-200 text-slate-700 hover:bg-slate-50'
                   }`}
                 >
                   {item.label}
@@ -388,17 +671,17 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
             </div>
           </div>
 
-          {/* Hatırlatma Saatleri */}
+          {/* Reminder Hours */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+              <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-teal-600" />
                 <span>Hatırlatma Saatleri</span>
               </label>
               <button
                 type="button"
                 onClick={handleAddTime}
-                className="text-xs font-bold text-teal-600 dark:text-teal-400 hover:text-teal-700 flex items-center gap-1"
+                className="text-xs font-bold text-teal-700 hover:text-teal-900 flex items-center gap-1"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Saat Ekle</span>
@@ -409,19 +692,19 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
               {times.map((time, idx) => (
                 <div
                   key={idx}
-                  className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-xl px-2.5 py-1.5 border border-slate-200 dark:border-slate-700"
+                  className="flex items-center gap-1 bg-slate-50 rounded-xl px-2.5 py-1.5 border border-slate-200"
                 >
                   <input
                     type="time"
                     value={time}
                     onChange={(e) => handleTimeChange(idx, e.target.value)}
-                    className="bg-transparent text-sm font-bold text-slate-800 dark:text-white outline-hidden"
+                    className="bg-transparent text-sm font-bold text-slate-900 outline-hidden"
                   />
                   {times.length > 1 && (
                     <button
                       type="button"
                       onClick={() => handleRemoveTime(idx)}
-                      className="p-1 text-slate-400 hover:text-rose-500"
+                      className="p-1 text-slate-400 hover:text-rose-600"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -431,16 +714,16 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
             </div>
           </div>
 
-          {/* Gün Seçimi */}
+          {/* Days Selection */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+              <label className="text-xs font-bold text-slate-800 uppercase tracking-wider">
                 Hangi Günler?
               </label>
               <button
                 type="button"
                 onClick={() => setSelectedDays(selectedDays.length === 7 ? [] : [1, 2, 3, 4, 5, 6, 0])}
-                className="text-xs font-semibold text-teal-600 dark:text-teal-400 hover:text-teal-700"
+                className="text-xs font-bold text-teal-700 hover:text-teal-900"
               >
                 {selectedDays.length === 0 || selectedDays.length === 7 ? 'Her Gün' : 'Tümünü Seç'}
               </button>
@@ -457,7 +740,7 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
                     className={`py-2 rounded-xl text-xs font-bold transition ${
                       isSelected
                         ? 'bg-teal-600 text-white shadow-xs'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
                   >
                     {d.label}
@@ -465,19 +748,19 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
                 );
               })}
             </div>
-            <p className="text-[11px] text-slate-400 dark:text-slate-500">
+            <p className="text-[11px] text-slate-500">
               {selectedDays.length === 0 || selectedDays.length === 7
                 ? 'Haftanın her günü hatırlatılacak'
                 : `Seçilen ${selectedDays.length} gün hatırlatılacak`}
             </p>
           </div>
 
-          {/* Stok / Kutu Takibi */}
-          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-800 space-y-3">
+          {/* Stock Tracking */}
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <PackageCheck className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                <PackageCheck className="w-4 h-4 text-teal-600" />
+                <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
                   Kutu & Stok Takibi
                 </span>
               </div>
@@ -485,14 +768,14 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
                 type="checkbox"
                 checked={stockEnabled}
                 onChange={(e) => setStockEnabled(e.target.checked)}
-                className="w-4 h-4 text-teal-600 rounded-md border-slate-300 dark:border-slate-700 focus:ring-teal-500"
+                className="w-4 h-4 text-teal-600 rounded-md border-slate-300 focus:ring-teal-500"
               />
             </div>
 
             {stockEnabled && (
               <div className="grid grid-cols-2 gap-3 pt-1">
                 <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                  <label className="text-[11px] font-bold text-slate-700">
                     Kutudaki Kalan Sayı
                   </label>
                   <input
@@ -500,11 +783,11 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
                     min="0"
                     value={stockCount}
                     onChange={(e) => setStockCount(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-bold"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-bold"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                  <label className="text-[11px] font-bold text-slate-700">
                     Uyarı Eşiği (Kaç kalınca uyarsın?)
                   </label>
                   <input
@@ -512,24 +795,24 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
                     min="1"
                     value={stockAlertThreshold}
                     onChange={(e) => setStockAlertThreshold(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-bold"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-bold"
                   />
                 </div>
               </div>
             )}
           </div>
 
-          {/* Notlar */}
+          {/* Medical Notes & Explanation */}
           <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-              Kişisel Notlar & Hatırlatma Notu
+            <label className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+              Kullanım Notları & Uyarılar
             </label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Örn: Bol su ile için, süt ve greyfurt suyu ile almayın."
-              rows={2}
-              className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 text-xs font-medium outline-hidden placeholder:text-slate-400 dark:placeholder:text-slate-500"
+              placeholder="Örn: Bol su ile için. Mideyi korumak için tok karnına alınmalıdır."
+              rows={3}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 text-xs font-medium outline-hidden placeholder:text-slate-400"
             />
           </div>
 
@@ -544,7 +827,7 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
                     onClose();
                   }
                 }}
-                className="w-full py-2.5 px-3 rounded-xl border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                className="w-full py-2.5 px-3 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold flex items-center justify-center gap-1.5 transition"
               >
                 <Trash2 className="w-4 h-4" />
                 <span>Bu İlacı Tamamen Sil</span>
@@ -556,7 +839,7 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
           <div className="pt-3">
             <button
               type="submit"
-              className="w-full py-3 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 active:scale-[0.99] text-white font-bold text-sm shadow-md shadow-teal-600/20 transition"
+              className="w-full py-3.5 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 active:scale-[0.99] text-white font-bold text-sm shadow-md shadow-teal-600/20 transition"
             >
               {initialMed ? 'Değişiklikleri Kaydet' : 'İlacı Kaydet'}
             </button>

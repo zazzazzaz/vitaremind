@@ -4,15 +4,9 @@
   body {
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     -webkit-tap-highlight-color: transparent;
+    background-color: #f8fafc;
+    color: #0f172a;
   }
-}
-
-.pb-safe {
-  padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 24px));
-}
-
-.pt-safe {
-  padding-top: max(2rem, env(safe-area-inset-top, 28px));
 }
 
 @keyframes wave {

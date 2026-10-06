@@ -1,12 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { Medication, DoseLog, WaterLog, WaterSettings, AppSettings, ActiveAlarm } from '../types';
 import { playWaterDropSound, playPillReminderSound, playCelebrationSound, triggerVibration } from '../services/soundService';
-import { 
-  sendLocalNotification, 
-  getNotificationPermission, 
-  initializeLocalNotifications, 
-  syncNativeBackgroundAlarms 
-} from '../services/notificationService';
+import { sendLocalNotification, getNotificationPermission } from '../services/notificationService';
 
 const STORAGE_KEY_MEDS = 'vitaremind_medications_v1';
 const STORAGE_KEY_DOSE_LOGS = 'vitaremind_dose_logs_v1';
@@ -31,7 +26,6 @@ const defaultAppSettings: AppSettings = {
   soundVolume: 80,
   vibrationEnabled: true,
   reminderTone: 'gentle',
-  themeMode: 'system',
 };
 
 const sampleMedications: Medication[] = [
@@ -109,6 +103,7 @@ interface AppContextType {
   recordDose: (medId: string, scheduledTime: string, status: 'taken' | 'skipped' | 'snoozed', snoozeMinutes?: number, note?: string) => void;
   undoDose: (medId: string, scheduledTime: string) => void;
   addWater: (amountMl: number) => void;
+  undoLastWaterLog: () => void;
   removeWaterLog: (logId: string) => void;
   updateWaterSettings: (settings: Partial<WaterSettings>) => void;
   updateAppSettings: (settings: Partial<AppSettings>) => void;
@@ -197,47 +192,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_APP_SETTINGS, JSON.stringify(appSettings));
+    // Enforce clean, high-contrast light theme
+    document.documentElement.classList.remove('dark');
+    document.documentElement.style.colorScheme = 'light';
   }, [appSettings]);
-
-  // Theme mode effect (Dark / Light / System)
-  useEffect(() => {
-    const themeMode = appSettings.themeMode || 'system';
-    const applyTheme = () => {
-      const isDark =
-        themeMode === 'dark' ||
-        (themeMode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-
-      if (isDark) {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
-    };
-
-    applyTheme();
-
-    if (themeMode === 'system') {
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      const listener = (e: MediaQueryListEvent) => {
-        if (e.matches) {
-          document.documentElement.classList.add('dark');
-        } else {
-          document.documentElement.classList.remove('dark');
-        }
-      };
-      mediaQuery.addEventListener('change', listener);
-      return () => mediaQuery.removeEventListener('change', listener);
-    }
-  }, [appSettings.themeMode]);
-
-  // Arka plan Android alarmlarını başlat ve senkronize et
-  useEffect(() => {
-    initializeLocalNotifications();
-  }, []);
-
-  useEffect(() => {
-    syncNativeBackgroundAlarms(medications, waterSettings, appSettings.notificationsEnabled);
-  }, [medications, waterSettings, appSettings.notificationsEnabled]);
 
   // Today calculations
   const todayStr = getTodayString();
@@ -522,6 +480,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setWaterLogs((prev) => prev.filter((l) => l.id !== logId));
   };
 
+  const undoLastWaterLog = () => {
+    const today = getTodayString();
+    setWaterLogs((prev) => {
+      // Find the latest log for today
+      const todayLogs = prev.filter((l) => l.date === today);
+      if (todayLogs.length === 0) return prev;
+      const lastLog = todayLogs[todayLogs.length - 1];
+      return prev.filter((l) => l.id !== lastLog.id);
+    });
+  };
+
   const updateWaterSettings = (settings: Partial<WaterSettings>) => {
     setWaterSettings((prev) => ({ ...prev, ...settings }));
   };
@@ -642,6 +611,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         recordDose,
         undoDose,
         addWater,
+        undoLastWaterLog,
         removeWaterLog,
         updateWaterSettings,
         updateAppSettings,

@@ -2,29 +2,29 @@ export type MedicationForm =
   | 'tablet' 
   | 'capsule' 
   | 'syrup' 
+  | 'injection' 
   | 'drop' 
   | 'spray' 
-  | 'injection' 
   | 'inhaler' 
   | 'cream' 
   | 'other';
 
-export type MedicationColor = 'emerald' | 'teal' | 'sky' | 'indigo' | 'violet' | 'amber' | 'rose';
-
 export type MealTiming = 'before_meal' | 'after_meal' | 'with_meal' | 'anytime';
+
+export type MedicationColor = 'emerald' | 'sky' | 'violet' | 'amber' | 'rose' | 'indigo' | 'teal';
 
 export interface Medication {
   id: string;
   name: string;
-  dosage: string; // e.g. "500 mg", "1 Tablet"
+  dosage: string; // e.g. "500 mg", "1 adet", "2 damla"
   form: MedicationForm;
   color: MedicationColor;
-  times: string[]; // e.g. ["08:00", "20:00"]
-  daysOfWeek: number[]; // 0=Sun, 1=Mon, ..., 6=Sat. Empty array means everyday
-  instructions: MealTiming;
+  times: string[]; // ["08:00", "20:00"]
+  daysOfWeek?: number[]; // [1,2,3,4,5] or empty for everyday
+  instructions: MealTiming; // Aç karnına, Tok karnına, Yemekle, Fark etmez
   stockEnabled: boolean;
-  stockCount: number;
-  stockAlertThreshold: number; // e.g. alert when <= 5
+  stockCount: number; // Kalan hap sayısı
+  stockAlertThreshold: number; // e.g. 5
   notes?: string;
   active: boolean;
   createdAt: string;
@@ -33,32 +33,33 @@ export interface Medication {
 export interface DoseLog {
   id: string;
   medId: string;
-  scheduledTime: string; // HH:mm
-  date: string; // YYYY-MM-DD
+  scheduledTime: string; // "09:00"
+  date: string; // "YYYY-MM-DD"
   status: 'taken' | 'skipped' | 'snoozed';
-  actualTime: string; // ISO
-  snoozeUntil?: string; // ISO
+  actualTime?: string; // ISO string
+  snoozeUntil?: string; // ISO string
   notes?: string;
 }
 
 export interface WaterLog {
   id: string;
   amountMl: number;
-  timestamp: string; // ISO
-  date: string; // YYYY-MM-DD
+  timestamp: string; // ISO string
+  date: string; // "YYYY-MM-DD"
 }
 
 export interface WaterSettings {
-  dailyGoalMl: number; // default 2500
-  intervalMinutes: number; // default 60 (remind every 1 hour)
-  startTime: string; // e.g. "08:00"
-  endTime: string; // e.g. "23:00"
+  dailyGoalMl: number; // e.g. 2500
   reminderEnabled: boolean;
+  intervalMinutes: number; // e.g. 60
+  startTime: string; // "08:30"
+  endTime: string; // "23:00"
+  soundTone: 'drop' | 'gentle' | 'bell' | 'marimba';
+  quickAmounts: number[]; // [150, 200, 250, 330, 500]
 }
 
 export interface AppSettings {
   userName: string;
-  theme?: 'light' | 'dark' | 'system';
   geminiApiKey?: string;
   notificationsEnabled: boolean;
   soundEnabled: boolean;

@@ -40,7 +40,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, onSelectTab, pillsRe
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] pb-safe">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] pb-safe transition-colors">
       <div className="max-w-lg mx-auto flex items-center justify-around px-2 py-2">
         {tabs.map((tab) => {
           const Icon = tab.icon;
@@ -57,7 +57,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, onSelectTab, pillsRe
             >
               <div
                 className={`relative p-1.5 rounded-xl transition-all ${
-                  isActive ? 'bg-teal-50 text-teal-600 scale-110 shadow-xs' : ''
+                  isActive ? 'bg-teal-50 text-teal-700 scale-110 shadow-xs' : ''
                 }`}
               >
                 <Icon className="w-5 h-5" />

@@ -9,9 +9,7 @@ import {
   Package, 
   Edit3, 
   Power, 
-  AlertTriangle, 
-  ShieldCheck,
-  Check
+  AlertTriangle 
 } from 'lucide-react';
 
 interface MedicationsTabProps {
@@ -67,14 +65,14 @@ export const MedicationsTab: React.FC<MedicationsTabProps> = ({ onOpenAddModal, 
             placeholder="İlaç veya vitamin adına göre ara..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-white rounded-2xl border border-slate-200/80 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 text-xs font-medium outline-hidden shadow-xs transition"
+            className="w-full pl-10 pr-4 py-2.5 bg-white text-slate-900 rounded-2xl border border-slate-300 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 text-xs font-semibold outline-hidden shadow-xs transition placeholder:text-slate-400"
           />
         </div>
       )}
 
       {/* Medications List */}
       {medications.length === 0 ? (
-        <div className="bg-white rounded-3xl p-10 border border-slate-200/80 text-center space-y-4">
+        <div className="bg-white rounded-3xl p-10 border border-slate-200/80 text-center space-y-4 shadow-xs">
           <div className="w-16 h-16 rounded-3xl bg-teal-50 text-teal-600 flex items-center justify-center mx-auto">
             <Pill className="w-8 h-8" />
           </div>
@@ -107,9 +105,9 @@ export const MedicationsTab: React.FC<MedicationsTabProps> = ({ onOpenAddModal, 
             return (
               <div
                 key={med.id}
-                className={`bg-white rounded-2xl p-5 border transition-all ${
+                className={`rounded-2xl p-5 border transition-all ${
                   med.active
-                    ? 'border-slate-200/90 shadow-xs hover:border-teal-300'
+                    ? 'bg-white border-slate-200 shadow-xs hover:border-teal-300'
                     : 'border-slate-200 opacity-60 bg-slate-50/50'
                 }`}
               >
@@ -166,7 +164,7 @@ export const MedicationsTab: React.FC<MedicationsTabProps> = ({ onOpenAddModal, 
                               setRefillMedId(med.id);
                               setRefillAmount(30);
                             }}
-                            className="text-[11px] font-bold text-teal-600 hover:text-teal-800 hover:underline"
+                            className="text-[11px] font-bold text-teal-700 hover:text-teal-900 hover:underline"
                           >
                             + Kutu Ekle
                           </button>
@@ -174,7 +172,7 @@ export const MedicationsTab: React.FC<MedicationsTabProps> = ({ onOpenAddModal, 
                       )}
 
                       {med.notes && (
-                        <p className="text-xs text-slate-500 italic mt-1.5">{med.notes}</p>
+                        <p className="text-xs text-slate-600 italic mt-1.5">{med.notes}</p>
                       )}
                     </div>
                   </div>
@@ -186,8 +184,8 @@ export const MedicationsTab: React.FC<MedicationsTabProps> = ({ onOpenAddModal, 
                       title={med.active ? 'Pasife Al' : 'Aktifleştir'}
                       className={`p-2 rounded-xl text-xs font-semibold flex items-center gap-1 transition ${
                         med.active
-                          ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                          : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                          ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                       }`}
                     >
                       <Power className="w-3.5 h-3.5" />
@@ -207,13 +205,13 @@ export const MedicationsTab: React.FC<MedicationsTabProps> = ({ onOpenAddModal, 
                 {/* Stock refill sub-panel */}
                 {refillMedId === med.id && (
                   <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-2 bg-slate-50 p-2.5 rounded-xl animate-in fade-in">
-                    <span className="text-xs font-bold text-slate-700">Yeni Kutu Ekle:</span>
+                    <span className="text-xs font-bold text-slate-800">Yeni Kutu Ekle:</span>
                     <input
                       type="number"
                       min="1"
                       value={refillAmount}
                       onChange={(e) => setRefillAmount(Number(e.target.value))}
-                      className="w-20 px-2 py-1 rounded-lg border border-slate-200 bg-white text-xs font-bold"
+                      className="w-20 px-2 py-1 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-900"
                     />
                     <button
                       onClick={() => handleRefillSubmit(med.id)}

@@ -83,49 +83,25 @@ export function playPillReminderSound(volume: number = 80, tone: string = 'gentl
       return;
     }
 
-    if (tone === 'chime') {
-      // Harmonik Çan: High crystal bell chimes (E6, A6, B6)
-      const chimeNotes = [1318.51, 1760.00, 1975.53];
-      chimeNotes.forEach((freq, idx) => {
-        const startTime = now + idx * 0.18;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, startTime);
-
-        gain.gain.setValueAtTime(0.001, startTime);
-        gain.gain.linearRampToValueAtTime(masterGain * 0.9, startTime + 0.01);
-        gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.8);
-
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-
-        osc.start(startTime);
-        osc.stop(startTime + 0.85);
-      });
-      return;
-    }
-
-    // Default 'gentle' (Nazik Melodi): Soft 3-note warm acoustic chord (C5, E5, G5)
-    const gentleNotes = [523.25, 659.25, 783.99];
-    gentleNotes.forEach((freq, idx) => {
-      const startTime = now + idx * 0.12;
+    // Default 'gentle' or 'chime': 3 harmonious ascending bells (F#5, A#5, C#6)
+    const notes = [739.99, 932.33, 1108.73];
+    notes.forEach((freq, idx) => {
+      const startTime = now + idx * 0.14;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
-      osc.type = 'triangle';
+      osc.type = 'sine';
       osc.frequency.setValueAtTime(freq, startTime);
 
       gain.gain.setValueAtTime(0.001, startTime);
-      gain.gain.linearRampToValueAtTime(masterGain * 0.8, startTime + 0.03);
-      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.5);
+      gain.gain.linearRampToValueAtTime(masterGain, startTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.55);
 
       osc.connect(gain);
       gain.connect(ctx.destination);
 
       osc.start(startTime);
-      osc.stop(startTime + 0.55);
+      osc.stop(startTime + 0.6);
     });
   } catch (err) {
     console.warn('Audio playback error:', err);
@@ -150,7 +126,7 @@ export function playCelebrationSound(volume: number = 80) {
       osc.frequency.setValueAtTime(freq, startTime);
 
       gain.gain.setValueAtTime(0.001, startTime);
-      gain.gain.linearRampToValueAtTime(masterGain * 0.03, startTime + 0.03);
+      gain.gain.linearRampToValueAtTime(masterGain, startTime + 0.03);
       gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.45);
 
       osc.connect(gain);
