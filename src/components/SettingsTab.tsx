@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Bell, 
@@ -9,6 +9,7 @@ import {
   Upload, 
   RotateCcw, 
   Check, 
+  Smartphone, 
   Sparkles, 
   Play, 
   User, 
@@ -16,73 +17,36 @@ import {
   CheckCircle2,
   Sun,
   Moon,
-  Monitor
+  Laptop,
+  Key
 } from 'lucide-react';
-import { LocalNotifications } from '@capacitor/local-notifications';
 import { requestNotificationPermission, getNotificationPermission } from '../services/notificationService';
 import { playPillReminderSound, playWaterDropSound, triggerVibration } from '../services/soundService';
+import { usePWAInstall } from '../hooks/usePWAInstall';
 
 export const SettingsTab: React.FC = () => {
   const {
     appSettings,
     updateAppSettings,
-    testAlarm,
     exportData,
     importData,
     resetAllData,
   } = useApp();
 
-  const [notificationStatus, setNotificationStatus] = useState<string>('default');
+  const { isInstallable, isInstalled, install } = usePWAInstall();
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(getNotificationPermission());
+  const [permissionRequested, setPermissionRequested] = useState(false);
   const [importSuccessMsg, setImportSuccessMsg] = useState('');
   const [importErrorMsg, setImportErrorMsg] = useState('');
+  const [showGuideModal, setShowGuideModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    async function checkNativePerm() {
-      try {
-        const res = await LocalNotifications.checkPermissions();
-        if (res.display === 'granted') {
-          setNotificationStatus('granted');
-          return;
-        } else if (res.display === 'denied') {
-          setNotificationStatus('denied');
-          return;
-        }
-      } catch {
-        // fallback
-      }
-      setNotificationStatus(getNotificationPermission());
-    }
-    checkNativePerm();
-  }, []);
-
   const handleRequestPermission = async () => {
-    try {
-      const res = await LocalNotifications.requestPermissions();
-      if (res.display === 'granted') {
-        setNotificationStatus('granted');
-        updateAppSettings({ notificationsEnabled: true });
-        alert('✓ Bildirim izni başarıyla aktif edildi!');
-        return;
-      } else {
-        setNotificationStatus(res.display === 'denied' ? 'denied' : 'prompt');
-        alert(
-          '⚠️ Android sistem izin diyaloğu açılamadı veya engellendi.\n\nLütfen telefonunuzun Ayarlar > Uygulamalar > VitaRemind > Bildirimler bölümünden izin verildiğinden emin olun.'
-        );
-      }
-    } catch {
-      // fallback
-    }
-
-    const webRes = await requestNotificationPermission();
-    setNotificationStatus(webRes);
-    if (webRes === 'granted') {
+    setPermissionRequested(true);
+    const perm = await requestNotificationPermission();
+    setNotificationPermission(perm);
+    if (perm === 'granted') {
       updateAppSettings({ notificationsEnabled: true });
-      alert('✓ Bildirim izni aktif edildi!');
-    } else {
-      alert(
-        '⚠️ Cihaz bildirim izni verilmedi. Lütfen telefonunuzun ayarlarından VitaRemind bildirimlerini aktifleştirin.'
-      );
     }
   };
 
@@ -92,20 +56,22 @@ export const SettingsTab: React.FC = () => {
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const content = event.target?.result as string;
-      if (content) {
-        const success = importData(content);
-        if (success) {
-          setImportSuccessMsg('Yedek başarıyla yüklendi!');
+      try {
+        const text = event.target?.result as string;
+        const ok = importData(text);
+        if (ok) {
+          setImportSuccessMsg('Verileriniz başarıyla geri yüklendi!');
           setImportErrorMsg('');
           setTimeout(() => setImportSuccessMsg(''), 4000);
         } else {
-          setImportErrorMsg('Dosya formatı geçersiz veya bozuk.');
-          setImportSuccessMsg('');
+          setImportErrorMsg('Geçersiz yedek dosyası formatı.');
         }
+      } catch {
+        setImportErrorMsg('Dosya okunurken bir hata oluştu.');
       }
     };
     reader.readAsText(file);
+
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -124,25 +90,8 @@ export const SettingsTab: React.FC = () => {
       <div>
         <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Ayarlar & Kişiselleştirme</h2>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Uygulama seslerini, görünüm temasını, bildirim izinlerini ve kişisel verilerinizi özelleştirin
+          Uygulama seslerini, yapay zeka anahtarınızı ve kişisel tercihlerinizi özelleştirin
         </p>
-      </div>
-
-      {/* Privacy & Security Feature Card */}
-      <div className="bg-gradient-to-r from-teal-900 via-teal-800 to-slate-900 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden">
-        <div className="flex items-start gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center shrink-0 border border-white/20">
-            <ShieldCheck className="w-6 h-6 text-emerald-300" />
-          </div>
-          <div className="space-y-1">
-            <h3 className="text-lg font-black tracking-tight text-white flex items-center gap-2">
-              <span>Gizlilik & Yerel Veri Güvenliği</span>
-            </h3>
-            <p className="text-xs text-teal-100/90 leading-relaxed">
-              Bütün ilaç takviminiz ve su takip verileriniz yalnızca kendi cihazınızda güvenle saklanır.
-            </p>
-          </div>
-        </div>
       </div>
 
       {/* User Name / Profile */}
@@ -152,48 +101,129 @@ export const SettingsTab: React.FC = () => {
           <span>Kişisel Bilgiler</span>
         </h3>
         <div className="space-y-1.5">
-          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">İsminiz / Kullanıcı Adı</label>
+          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+            Size Nasıl Hitap Edelim?
+          </label>
           <input
             type="text"
             value={appSettings.userName}
             onChange={(e) => updateAppSettings({ userName: e.target.value })}
-            placeholder="Örn: Ahmet Yılmaz"
-            className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 dark:text-white rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-teal-500"
+            placeholder="Adınız"
+            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white font-bold text-sm focus:border-teal-500 outline-hidden"
           />
         </div>
       </div>
 
-      {/* Theme Settings (Açık / Koyu / Sistem Teması) */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4 transition-colors">
-        <h3 className="font-bold text-slate-900 dark:text-white text-base flex items-center gap-2">
-          <Moon className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-          <span>Görünüm & Tema Tercihi</span>
-        </h3>
+      {/* Gemini API Key Setting Card */}
+      <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-slate-900 dark:text-white text-base flex items-center gap-2">
+            <Key className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+            <span>Google Gemini API Anahtarı</span>
+          </h3>
+          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
+            Kişisel
+          </span>
+        </div>
 
-        <div className="grid grid-cols-3 gap-2 pt-1">
-          {[
-            { id: 'system', label: 'Sistem Teması', icon: Monitor },
-            { id: 'light', label: 'Açık Tema', icon: Sun },
-            { id: 'dark', label: 'Koyu Tema', icon: Moon },
-          ].map((t) => {
-            const Icon = t.icon;
-            const isActive = (appSettings.themeMode || 'system') === t.id;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => updateAppSettings({ themeMode: t.id as any })}
-                className={`py-3 px-3 rounded-2xl border text-xs font-bold transition flex flex-col items-center justify-center gap-1.5 ${
-                  isActive
-                    ? 'bg-teal-50 dark:bg-teal-950/40 border-teal-500 text-teal-800 dark:text-teal-300 shadow-xs'
-                    : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                <span>{t.label}</span>
-              </button>
-            );
-          })}
+        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+          İlaç kutusunu fotoğraflayarak otomatik tanıma özelliğini kullanmak için kendi ücretsiz Gemini API anahtarınızı girebilirsiniz. Anahtarınız sadece bu cihazın hafızasında saklanır.
+        </p>
+
+        <div className="space-y-1.5 pt-1">
+          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+            API Anahtarı (AIzaSy...)
+          </label>
+          <input
+            type="password"
+            value={appSettings.geminiApiKey || ''}
+            onChange={(e) => updateAppSettings({ geminiApiKey: e.target.value.trim() })}
+            placeholder="AIzaSy..."
+            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white font-mono text-xs focus:border-teal-500 outline-hidden"
+          />
+        </div>
+
+        <div className="flex items-center justify-between pt-1">
+          <a
+            href="https://aistudio.google.com/app/apikey"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-teal-600 dark:text-teal-400 font-bold hover:underline inline-flex items-center gap-1"
+          >
+            <span>Ücretsiz Google API Anahtarı Al</span>
+            <span>↗</span>
+          </a>
+          {appSettings.geminiApiKey && (
+            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+              <Check className="w-3.5 h-3.5" />
+              <span>Anahtar Kaydedildi</span>
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Theme Selection Card (Light / Dark / System) */}
+      <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-slate-900 dark:text-white text-base flex items-center gap-2">
+            <Sun className="w-4 h-4 text-amber-500 dark:hidden" />
+            <Moon className="w-4 h-4 text-teal-400 hidden dark:inline" />
+            <span>Görünüm & Tema</span>
+          </h3>
+          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+            {appSettings.theme === 'dark' ? 'Koyu Tema' : appSettings.theme === 'light' ? 'Açık Tema' : 'Sistemle Uyumlu'}
+          </span>
+        </div>
+
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Uygulamanın açık veya koyu modda çalışmasını seçebilir ya da cihazınızın temasına göre otomatik ayarlayabilirsiniz.
+        </p>
+
+        <div className="grid grid-cols-3 gap-2.5 pt-1">
+          <button
+            type="button"
+            onClick={() => updateAppSettings({ theme: 'light' })}
+            className={`flex flex-col items-center justify-center gap-2 p-3.5 rounded-2xl border text-xs font-bold transition ${
+              appSettings.theme === 'light'
+                ? 'bg-amber-50/70 border-amber-500 text-amber-900 shadow-xs'
+                : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
+            }`}
+          >
+            <div className={`p-2 rounded-xl ${appSettings.theme === 'light' ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
+              <Sun className="w-5 h-5" />
+            </div>
+            <span>Açık Tema</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => updateAppSettings({ theme: 'dark' })}
+            className={`flex flex-col items-center justify-center gap-2 p-3.5 rounded-2xl border text-xs font-bold transition ${
+              appSettings.theme === 'dark'
+                ? 'bg-teal-950/60 border-teal-500 text-teal-300 shadow-xs'
+                : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
+            }`}
+          >
+            <div className={`p-2 rounded-xl ${appSettings.theme === 'dark' ? 'bg-teal-900/60 text-teal-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
+              <Moon className="w-5 h-5" />
+            </div>
+            <span>Koyu Tema</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => updateAppSettings({ theme: 'system' || !appSettings.theme })}
+            className={`flex flex-col items-center justify-center gap-2 p-3.5 rounded-2xl border text-xs font-bold transition ${
+              (!appSettings.theme || appSettings.theme === 'system')
+                ? 'bg-teal-50 dark:bg-slate-800 border-teal-500 text-teal-800 dark:text-teal-300 shadow-xs'
+                : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
+            }`}
+          >
+            <div className={`p-2 rounded-xl ${(!appSettings.theme || appSettings.theme === 'system') ? 'bg-teal-100 dark:bg-slate-700 text-teal-700 dark:text-teal-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
+              <Laptop className="w-5 h-5" />
+            </div>
+            <span>Sistem</span>
+          </button>
         </div>
       </div>
 
@@ -204,232 +234,225 @@ export const SettingsTab: React.FC = () => {
           <span>Bildirimler & Ses Efektleri</span>
         </h3>
 
-        {/* Master Notification Switch */}
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-          <div className="space-y-0.5">
-            <span className="text-xs font-bold text-slate-900 dark:text-white block">Tüm Arka Plan Alarmları ve Bildirimler</span>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              İlaç vakti geldiğinde telefon kilitliyken bile sesli bildirim uyarısı gönderir.
-            </p>
-          </div>
-          <input
-            type="checkbox"
-            checked={appSettings.notificationsEnabled}
-            onChange={(e) => {
-              const val = e.target.checked;
-              updateAppSettings({ notificationsEnabled: val });
-              if (val) {
-                handleRequestPermission();
-              }
-            }}
-            className="w-5 h-5 text-teal-600 rounded-md border-slate-300 focus:ring-teal-500 cursor-pointer"
-          />
-        </div>
-
-        {/* Device Notification Status Card */}
-        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        {/* Browser Notification Status */}
+        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="space-y-0.5">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Cihaz İzin Durumu:</span>
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Cihaz Bildirim İzni:</span>
               <span
-                className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                  notificationStatus === 'granted'
-                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                    : notificationStatus === 'denied'
-                    ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
-                    : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                className={`text-xs font-black uppercase px-2 py-0.5 rounded-full ${
+                  notificationPermission === 'granted'
+                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
+                    : notificationPermission === 'denied'
+                    ? 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
+                    : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
                 }`}
               >
-                {notificationStatus === 'granted'
-                  ? 'Aktif (İzin Verildi)'
-                  : notificationStatus === 'denied'
+                {notificationPermission === 'granted'
+                  ? 'Verildi'
+                  : notificationPermission === 'denied'
                   ? 'Engellendi'
-                  : 'İzin Bekleniyor'}
+                  : 'Bekliyor'}
               </span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              {notificationStatus === 'granted'
-                ? 'Sistem izinleri verildi. Alarmlarınız tam vaktinde çalacaktır.'
-                : 'Bildirim almıyorsanız telefonunuzun Ayarlar > Uygulamalar > VitaRemind > Bildirimler sekmesinden izin verin.'}
+              Telefon ekranı kilitliyken veya uygulama arkadayken alarm almak için bildirim izni gereklidir.
             </p>
           </div>
 
-          <button
-            onClick={handleRequestPermission}
-            className="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs shadow-xs transition shrink-0"
-          >
-            {notificationStatus === 'granted' ? 'İzni Yeniden Kontrol Et' : 'İzin İste / Aç'}
-          </button>
+          {notificationPermission !== 'granted' && (
+            <button
+              onClick={handleRequestPermission}
+              className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold shrink-0 transition"
+            >
+              {permissionRequested ? 'İzni Yenile' : 'İzin Ver'}
+            </button>
+          )}
         </div>
 
-        {/* Sound toggle & tone selection */}
-        <div className="space-y-4 pt-1">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Volume2 className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-              <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Hatırlatma Sesi Çalsın</span>
+        {/* In-App Sounds Toggle */}
+        <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-teal-50 dark:bg-slate-800 text-teal-600 dark:text-teal-400">
+              <Volume2 className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                Sesli Uyarılar & Efektler
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                İlaç ve su saati geldiğinde sesli alarm çalar
+              </span>
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            checked={appSettings.soundEnabled}
+            onChange={(e) => updateAppSettings({ soundEnabled: e.target.checked })}
+            className="w-5 h-5 text-teal-600 rounded-md border-slate-300 dark:border-slate-700 focus:ring-teal-500"
+          />
+        </div>
+
+        {/* Volume Slider */}
+        {appSettings.soundEnabled && (
+          <div className="space-y-2 py-1">
+            <div className="flex justify-between text-xs font-bold text-slate-700 dark:text-slate-300">
+              <span>Ses Seviyesi</span>
+              <span>%{appSettings.soundVolume}</span>
             </div>
             <input
-              type="checkbox"
-              checked={appSettings.soundEnabled}
-              onChange={(e) => updateAppSettings({ soundEnabled: e.target.checked })}
-              className="w-5 h-5 text-teal-600 rounded-md border-slate-300 focus:ring-teal-500 cursor-pointer"
+              type="range"
+              min="0"
+              max="100"
+              value={appSettings.soundVolume}
+              onChange={(e) => updateAppSettings({ soundVolume: Number(e.target.value) })}
+              className="w-full accent-teal-600 h-2 bg-slate-200 dark:bg-slate-700 rounded-lg cursor-pointer"
             />
           </div>
+        )}
 
-          {appSettings.soundEnabled && (
-            <>
-              {/* Tone selection */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                    Alarm Melodisi
-                  </label>
-                  <button
-                    type="button"
-                    onClick={testCurrentTone}
-                    className="text-xs font-bold text-teal-600 dark:text-teal-400 hover:text-teal-800 flex items-center gap-1"
-                  >
-                    <Play className="w-3 h-3 fill-teal-600 dark:fill-teal-400" />
-                    <span>Tonu Dinle</span>
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {[
-                    { id: 'gentle', label: 'Nazik Melodi' },
-                    { id: 'chime', label: 'Harmonik Çan' },
-                    { id: 'digital', label: 'Modern Bip' },
-                    { id: 'zen', label: 'Zen / Huzur' },
-                  ].map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => updateAppSettings({ reminderTone: t.id as any })}
-                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition ${
-                        appSettings.reminderTone === t.id
-                          ? 'bg-teal-50 dark:bg-teal-950/40 border-teal-500 text-teal-800 dark:text-teal-300'
-                          : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                      }`}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Volume Slider */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs font-bold text-slate-700 dark:text-slate-300">
-                  <span>Ses Seviyesi</span>
-                  <span className="text-teal-600 dark:text-teal-400">%{appSettings.soundVolume}</span>
-                </div>
-                <input
-                  type="range"
-                  min="10"
-                  max="100"
-                  value={appSettings.soundVolume}
-                  onChange={(e) => updateAppSettings({ soundVolume: Number(e.target.value) })}
-                  className="w-full accent-teal-600 cursor-pointer"
-                />
-              </div>
-            </>
-          )}
-
-          {/* Vibration toggle */}
-          <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
-            <div className="flex items-center gap-2">
-              <Vibrate className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-              <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Titreşim Efekti</span>
+        {/* Reminder Tone Selection */}
+        {appSettings.soundEnabled && (
+          <div className="space-y-2 py-1">
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
+              Hatırlatıcı Alarm Melodisi
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[
+                { id: 'gentle', label: 'Yumuşak Melodi' },
+                { id: 'chime', label: 'Kristal Çan' },
+                { id: 'digital', label: 'Dijital Bip' },
+                { id: 'zen', label: 'Zen Gong' },
+              ].map((tone) => (
+                <button
+                  key={tone.id}
+                  onClick={() => updateAppSettings({ reminderTone: tone.id as any })}
+                  className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center justify-between transition ${
+                    appSettings.reminderTone === tone.id
+                      ? 'bg-teal-50 dark:bg-slate-800 border-teal-500 text-teal-800 dark:text-teal-300'
+                      : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                  }`}
+                >
+                  <span>{tone.label}</span>
+                  {appSettings.reminderTone === tone.id && (
+                    <Check className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                  )}
+                </button>
+              ))}
             </div>
-            <input
-              type="checkbox"
-              checked={appSettings.vibrationEnabled}
-              onChange={(e) => updateAppSettings({ vibrationEnabled: e.target.checked })}
-              className="w-5 h-5 text-teal-600 rounded-md border-slate-300 focus:ring-teal-500 cursor-pointer"
-            />
+
+            <button
+              onClick={testCurrentTone}
+              className="text-xs text-teal-600 dark:text-teal-400 font-bold hover:text-teal-700 flex items-center gap-1.5 pt-1"
+            >
+              <Play className="w-3.5 h-3.5 fill-teal-600 dark:fill-teal-400" />
+              <span>Seçili Melodiyi Dinle</span>
+            </button>
           </div>
+        )}
+
+        {/* Vibration Toggle */}
+        <div className="flex items-center justify-between py-2">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-teal-50 dark:bg-slate-800 text-teal-600 dark:text-teal-400">
+              <Vibrate className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                Titreşim
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                Alarmlar sırasında cihazı titret (Destekleyen telefonlarda)
+              </span>
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            checked={appSettings.vibrationEnabled}
+            onChange={(e) => updateAppSettings({ vibrationEnabled: e.target.checked })}
+            className="w-5 h-5 text-teal-600 rounded-md border-slate-300 dark:border-slate-700 focus:ring-teal-500"
+          />
         </div>
       </div>
 
-      {/* AI Settings */}
+      {/* PWA Phone Installation Helper */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="font-bold text-slate-900 dark:text-white text-base flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-teal-600 dark:text-teal-400" />
-            <span>Yapay Zeka (Gemini Vision) Ayarları</span>
-          </h3>
-          <span className="text-[11px] font-bold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/40 px-2.5 py-1 rounded-full border border-teal-100 dark:border-teal-900">
-            Akıllı Tarama
-          </span>
-        </div>
-
-        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-          İlaç kutularını ve reçeteleri kameranızla tarayıp otomatik ilaç eklemek için Google Gemini API anahtarınızı tanımlayabilirsiniz.
+        <h3 className="font-bold text-slate-900 dark:text-white text-base flex items-center gap-2">
+          <Smartphone className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+          <span>Telefona / Masaüstüne Yükleme (PWA)</span>
+        </h3>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          VitaRemind tarayıcıdan bağımsız, tam ekran ve internet olmadan da çalışabilen bir Progressive Web App (PWA) uygulamasıdır.
         </p>
 
-        <div className="space-y-2">
-          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">Gemini API Key</label>
-          <div className="flex gap-2">
-            <input
-              type="password"
-              placeholder="AIzaSy..."
-              defaultValue={typeof window !== 'undefined' ? localStorage.getItem('vitaremind_gemini_api_key') || '' : ''}
-              id="gemini-api-input"
-              className="flex-1 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 dark:text-white rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-teal-500"
-            />
+        {isInstalled ? (
+          <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs font-medium flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span>VitaRemind cihazınıza başarıyla yüklenmiş durumdadır.</span>
+          </div>
+        ) : (
+          <div className="space-y-2">
             <button
               onClick={() => {
-                const el = document.getElementById('gemini-api-input') as HTMLInputElement;
-                if (el) {
-                  const cleaned = el.value
-                    .trim()
-                    .replace(/[\u201C\u201D\u2018\u2019"]/g, '')
-                    .replace(/[^\x20-\x7E]/g, '');
-                  localStorage.setItem('vitaremind_gemini_api_key', cleaned);
-                  el.value = cleaned;
-                  alert('Gemini API Anahtarı temizlenip başarıyla kaydedildi!');
+                if (isInstallable) {
+                  install();
+                } else {
+                  setShowGuideModal(true);
                 }
               }}
-              className="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow-xs transition"
+              className="w-full py-3.5 bg-teal-600 hover:bg-teal-700 active:scale-[0.99] text-white font-bold text-sm rounded-xl shadow-md shadow-teal-600/20 transition flex items-center justify-center gap-2"
             >
-              Kaydet
+              <Download className="w-4 h-4" />
+              <span>{isInstallable ? 'Hemen Telefona Yükle' : 'Telefona Yükle / Nasıl Yüklenir?'}</span>
             </button>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center">
+              Chrome menüsündeki üç nokta (⋮) butonundan da "Uygulamayı Yükle" diyebilirsiniz.
+            </p>
           </div>
-          <p className="text-[11px] text-slate-400 dark:text-slate-500">
-            Anahtarınız yalnızca cihazınızın yerel hafızasında güvenle saklanır.
-          </p>
-        </div>
-
-        {/* Custom Model ID Configuration for Future Proofing */}
-        <div className="space-y-2 pt-4 border-t border-slate-100 dark:border-slate-800 mt-4">
-          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">Gemini Model Adı (Gelişmiş)</label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="gemini-3.8-flash"
-              defaultValue={typeof window !== 'undefined' ? localStorage.getItem('vitaremind_gemini_model') || 'gemini-3.8-flash' : 'gemini-3.8-flash'}
-              id="gemini-model-input"
-              className="flex-1 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 dark:text-white rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-teal-500"
-            />
-            <button
-              onClick={() => {
-                const el = document.getElementById('gemini-model-input') as HTMLInputElement;
-                if (el) {
-                  localStorage.setItem('vitaremind_gemini_model', el.value.trim() || 'gemini-3.8-flash');
-                  alert('Gemini Model adı başarıyla kaydedildi!');
-                }
-              }}
-              className="px-4 py-2.5 bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 text-white font-bold text-xs rounded-xl shadow-xs transition"
-            >
-              Modeli Kaydet
-            </button>
-          </div>
-          <p className="text-[11px] text-slate-400 dark:text-slate-500">
-            Google yeni bir model çıkardığında burayı dilediğiniz zaman güncelleyebilirsiniz. Ayrıca uygulama otomatik yedek model zincirine de sahiptir.
-          </p>
-        </div>
+        )}
       </div>
+
+      {/* Guide modal if opened from settings */}
+      {showGuideModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-2xl text-slate-800 dark:text-slate-100 border dark:border-slate-800 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Smartphone className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Telefona Kolay Kurulum</h3>
+              </div>
+              <button
+                onClick={() => setShowGuideModal(false)}
+                className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+              <div className="p-3 bg-teal-50 dark:bg-slate-800 rounded-2xl border border-teal-100 dark:border-slate-700 space-y-1">
+                <span className="font-bold text-teal-900 dark:text-teal-300 block text-xs">📱 Android (Chrome):</span>
+                <p>1. Chrome'un sağ üst köşesindeki <strong>üç nokta (⋮)</strong> simgesine dokunun.</p>
+                <p>2. Menüden <strong>"Uygulamayı Yükle"</strong> (veya "Ana Ekrana Ekle") butonuna dokunun.</p>
+                <p>3. Karşınıza <strong>VitaRemind</strong> onay penceresi gelecektir.</p>
+              </div>
+
+              <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-1">
+                <span className="font-bold text-slate-900 dark:text-white block text-xs">🍎 iPhone (Safari):</span>
+                <p>1. Safari'nin altındaki <strong>Paylaş</strong> simgesine dokunun.</p>
+                <p>2. <strong>"Ana Ekrana Ekle"</strong> butonuna basın.</p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowGuideModal(false)}
+              className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs transition"
+            >
+              Anladım
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Data Backup & Restore */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4">
@@ -439,19 +462,34 @@ export const SettingsTab: React.FC = () => {
         </p>
 
         {importSuccessMsg && (
-          <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs font-bold flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs font-bold flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4" />
             <span>{importSuccessMsg}</span>
           </div>
         )}
 
         {importErrorMsg && (
-          <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs font-bold flex items-center gap-2">
-            <span>{importErrorMsg}</span>
+          <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-300 text-xs font-bold">
+            {importErrorMsg}
           </div>
         )}
 
-        <div className="flex flex-col sm:flex-row gap-3 pt-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button
+            onClick={exportData}
+            className="py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-2 transition"
+          >
+            <Download className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+            <span>Yedeği İndir (.json)</span>
+          </button>
+
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-2 transition"
+          >
+            <Upload className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+            <span>Yedekten Geri Yükle</span>
+          </button>
           <input
             type="file"
             ref={fileInputRef}
@@ -459,46 +497,34 @@ export const SettingsTab: React.FC = () => {
             accept=".json"
             className="hidden"
           />
-          <button
-            onClick={() => exportData()}
-            className="flex-1 py-3 px-4 rounded-xl bg-teal-50 dark:bg-teal-950/40 hover:bg-teal-100 text-teal-800 dark:text-teal-300 font-bold text-xs flex items-center justify-center gap-2 border border-teal-200 dark:border-teal-800 transition"
-          >
-            <Download className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-            <span>Yedek İndir (JSON)</span>
-          </button>
+        </div>
 
+        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <span className="text-xs text-slate-500 dark:text-slate-400">Tüm verileri temizle:</span>
           <button
-            onClick={() => fileInputRef.current?.click()}
-            className="flex-1 py-3 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-2 border border-slate-200 dark:border-slate-700 transition"
+            onClick={() => {
+              if (confirm('Tüm ilaç ve su kayıtlarınız silinerek varsayılan ayarlara dönülecek. Onaylıyor musunuz?')) {
+                resetAllData();
+              }
+            }}
+            className="text-xs font-bold text-rose-600 dark:text-rose-400 hover:text-rose-800 flex items-center gap-1"
           >
-            <Upload className="w-4 h-4 text-slate-600 dark:text-slate-400" />
-            <span>Yedek Yükleme (JSON)</span>
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Varsayılana Sıfırla</span>
           </button>
         </div>
       </div>
 
-      {/* Reset Data */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4">
-        <h3 className="font-bold text-slate-900 dark:text-white text-base text-rose-600 dark:text-rose-400">Tehlikeli Bölge</h3>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Tüm ilaç kayıtlarınızı, geçmişinizi ve su verilerinizi kalibre edin veya sıfırlayın.
-        </p>
-        <button
-          onClick={() => resetAllData()}
-          className="py-3 px-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 text-rose-700 dark:text-rose-300 font-bold text-xs flex items-center justify-center gap-2 border border-rose-200 dark:border-rose-800 transition w-full"
-        >
-          <RotateCcw className="w-4 h-4" />
-          <span>Tüm Verileri Sıfırla</span>
-        </button>
-      </div>
-
-      {/* Version Info (Readable Dark/Light Gray) */}
-      <div className="pt-6 pb-4 text-center border-t border-slate-200/60 dark:border-slate-800">
-        <p className="text-xs font-bold text-slate-500 dark:text-slate-400 tracking-wider">
-          VitaRemind v1.0.0
-        </p>
-        <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium mt-0.5">
-          Kişiselleştirilmiş İlaç & Su Hatırlatıcı
+      {/* App Version & Credits Card */}
+      <div className="text-center py-4 space-y-1 text-slate-400 dark:text-slate-500">
+        <div className="flex items-center justify-center gap-2">
+          <span className="font-extrabold text-xs text-slate-600 dark:text-slate-300">VitaRemind</span>
+          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
+            Sürüm 1.2.0 (PWA)
+          </span>
+        </div>
+        <p className="text-[11px]">
+          Kişiselleştirilmiş, Reklamsız İlaç ve Su Hatırlatıcısı
         </p>
       </div>
     </div>
