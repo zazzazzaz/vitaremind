@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+.pb-safe {
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 24px));
+}
+
+.pt-safe {
+  padding-top: max(2rem, env(safe-area-inset-top, 28px));
+}
+
+@keyframes wave {
+  0% {
+    transform: translateX(0) translateZ(0) scaleY(1);
+  }
+  50% {
+    transform: translateX(-25%) translateZ(0) scaleY(0.95);
+  }
+  100% {
+    transform: translateX(-50%) translateZ(0) scaleY(1);
+  }
+}
+
+.animate-wave {
+  animation: wave 8s cubic-bezier(0.36, 0.45, 0.63, 0.53) infinite;
+}
+
+.animate-wave-slow {
+  animation: wave 14s cubic-bezier(0.36, 0.45, 0.63, 0.53) infinite reverse;
+}

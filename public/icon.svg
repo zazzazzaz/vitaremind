@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#0d9488" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="url(#grad)" />
+  <!-- Water Drop Outline -->
+  <path d="M256 96 C256 96 160 230 160 310 C160 363 203 406 256 406 C309 406 352 363 352 310 C352 230 256 96 256 96 Z" fill="#ffffff" fill-opacity="0.25"/>
+  <!-- Medical Plus / Pill Symbol -->
+  <path d="M256 180 V340 M176 260 H336" stroke="#ffffff" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="360" cy="150" r="28" fill="#38bdf8"/>
+</svg>

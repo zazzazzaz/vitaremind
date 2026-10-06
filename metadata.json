@@ -1,0 +1,6 @@
+{
+  "name": "VitaRemind - İlaç ve Su Hatırlatıcı",
+  "description": "Kişiselleştirilebilir, reklamsız, günlük ilaç kullanım ve su içme periyodu takip ve hatırlatıcı Android PWA uygulaması.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
