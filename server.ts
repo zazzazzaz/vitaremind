@@ -8,7 +8,7 @@ async function startServer() {
   const app = express();
   const port = process.env.PORT || 3000;
 
-  app.use(express.json({ limit: '15mb' }));
+  app.use(express.json({ limit: '30mb' }));
 
   // AI Medication Scanner endpoint
   app.post('/api/ai/scan-medication', async (req, res) => {
@@ -34,68 +34,90 @@ async function startServer() {
         },
       });
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: [
-          {
-            role: 'user',
-            parts: [
+      const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z]+;base64,/, '');
+
+      const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
+      let parsedData: any = null;
+      let lastError: any = null;
+
+      for (const modelName of modelsToTry) {
+        try {
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents: [
               {
-                inlineData: {
-                  mimeType: mimeType || 'image/jpeg',
-                  data: imageBase64.replace(/^data:image\/[a-zA-Z]+;base64,/, ''),
-                },
-              },
-              {
-                text: 'Bu görsel bir ilaç kutusu, şişesi, reçetesi veya prospektüsüdür. ' +
-                      'Lütfen görseli inceleyerek ilacın adını, dozajını/miktarını (örn: 500 mg, 1 Tablet vb.), ' +
-                      'ilaç formunu (tablet, capsule, syrup, injection, drop, spray, inhaler, cream, other seçeneklerinden biri), ' +
-                      'kullanım talimatını (before_meal: aç, after_meal: tok, with_meal: yemekle, anytime: fark etmez), ' +
-                      'kalan tahmini veya kutudaki toplam adet sayısını ve varsa önemli kullanım notlarını Türkçe olarak çıkar.',
+                role: 'user',
+                parts: [
+                  {
+                    inlineData: {
+                      mimeType: mimeType || 'image/jpeg',
+                      data: cleanBase64,
+                    },
+                  },
+                  {
+                    text: 'Bu görsel bir ilaç kutusu, şişesi, reçetesi veya prospektüsüdür. ' +
+                          'Lütfen görseli dikkatle inceleyerek ilacın adını (name), dozajını/miktarını (dosage, örn: 500 mg, 1 Tablet vb.), ' +
+                          'ilaç formunu (tablet, capsule, syrup, injection, drop, spray, inhaler, cream, other seçeneklerinden biri), ' +
+                          'kullanım talimatını (before_meal: aç, after_meal: tok, with_meal: yemekle, anytime: fark etmez), ' +
+                          'kalan tahmini veya kutudaki toplam adet sayısını (stockCount) ve varsa önemli kullanım notlarını (notes) Türkçe olarak çıkar.',
+                  },
+                ],
               },
             ],
-          },
-        ],
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              name: {
-                type: Type.STRING,
-                description: 'İlacın veya takviyenin ticari/etken adı',
-              },
-              dosage: {
-                type: Type.STRING,
-                description: 'Doz veya ölçü (Örn: 500 mg, 1 Kapsül)',
-              },
-              form: {
-                type: Type.STRING,
-                enum: ['tablet', 'capsule', 'syrup', 'injection', 'drop', 'spray', 'inhaler', 'cream', 'other'],
-                description: 'İlacın formu',
-              },
-              instructions: {
-                type: Type.STRING,
-                enum: ['before_meal', 'after_meal', 'with_meal', 'anytime'],
-                description: 'Kullanım zamanı',
-              },
-              stockCount: {
-                type: Type.INTEGER,
-                description: 'Kutudaki toplam veya kalan hap/adet sayısı',
-              },
-              notes: {
-                type: Type.STRING,
-                description: 'Kullanım uyarısı veya açıklayıcı kısa not',
+            config: {
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  name: {
+                    type: Type.STRING,
+                    description: 'İlacın veya takviyenin ticari/etken adı',
+                  },
+                  dosage: {
+                    type: Type.STRING,
+                    description: 'Doz veya ölçü (Örn: 500 mg, 1 Kapsül)',
+                  },
+                  form: {
+                    type: Type.STRING,
+                    enum: ['tablet', 'capsule', 'syrup', 'injection', 'drop', 'spray', 'inhaler', 'cream', 'other'],
+                    description: 'İlacın formu',
+                  },
+                  instructions: {
+                    type: Type.STRING,
+                    enum: ['before_meal', 'after_meal', 'with_meal', 'anytime'],
+                    description: 'Kullanım zamanı',
+                  },
+                  stockCount: {
+                    type: Type.INTEGER,
+                    description: 'Kutudaki toplam veya kalan hap/adet sayısı',
+                  },
+                  notes: {
+                    type: Type.STRING,
+                    description: 'Kullanım uyarısı veya açıklayıcı kısa not',
+                  },
+                },
+                required: ['name', 'form', 'instructions'],
               },
             },
-            required: ['name', 'form', 'instructions'],
-          },
-        },
-      });
+          });
 
-      const text = response.text || '{}';
-      const parsedData = JSON.parse(text);
-      return res.json({ success: true, data: parsedData });
+          const text = response.text || '{}';
+          const data = JSON.parse(text);
+          if (data && data.name) {
+            parsedData = data;
+            break;
+          }
+        } catch (err: any) {
+          lastError = err;
+          console.warn(`Vision model ${modelName} failed:`, err.message);
+        }
+      }
+
+      if (parsedData) {
+        return res.json({ success: true, data: parsedData });
+      }
+
+      throw lastError || new Error('Görselden ilaç bilgisi okunamadı.');
     } catch (err: any) {
       console.error('Gemini OCR Error:', err);
       return res.status(500).json({

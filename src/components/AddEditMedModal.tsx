@@ -17,7 +17,7 @@ import {
   ArrowRight,
   Info
 } from 'lucide-react';
-import { searchMedicationVariants, MedicationVariant } from '../services/aiMedicationService';
+import { searchMedicationVariants, MedicationVariant, resizeAndCompressImage, scanMedicationImage } from '../services/aiMedicationService';
 
 interface AddEditMedModalProps {
   initialMed?: Medication | null;
@@ -194,63 +194,40 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
     setScanSuccessMsg('');
 
     try {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const base64Data = event.target?.result as string;
-        if (!base64Data) {
-          setIsScanning(false);
-          return;
+      // 1. Client-side resize and compression to prevent memory & 413 payload limit errors
+      const compressedBase64 = await resizeAndCompressImage(file, 1200, 0.85);
+
+      // 2. Scan medication with safe response handling and direct Gemini fallback
+      const data = await scanMedicationImage(compressedBase64, appSettings.geminiApiKey);
+
+      if (data) {
+        if (data.name) setName(data.name);
+        if (data.dosage) setDosage(data.dosage);
+        if (data.form && formOptions.some((f) => f.id === data.form)) {
+          setForm(data.form);
+        }
+        if (data.instructions) {
+          setInstructions(data.instructions);
+        }
+        if (data.stockCount && Number(data.stockCount) > 0) {
+          setStockEnabled(true);
+          setStockCount(Number(data.stockCount));
+        }
+        if (data.notes) {
+          setNotes((prev) => (prev ? `${prev} • ${data.notes}` : data.notes));
         }
 
-        try {
-          const response = await fetch('/api/ai/scan-medication', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              imageBase64: base64Data,
-              mimeType: file.type || 'image/jpeg',
-              userApiKey: appSettings.geminiApiKey || undefined,
-            }),
-          });
-
-          const result = await response.json();
-          if (!response.ok || !result.success) {
-            throw new Error(result.error || 'İlaç kutusu okunamadı.');
-          }
-
-          const { data } = result;
-          if (data.name) setName(data.name);
-          if (data.dosage) setDosage(data.dosage);
-          if (data.form && formOptions.some((f) => f.id === data.form)) {
-            setForm(data.form);
-          }
-          if (data.instructions) {
-            setInstructions(data.instructions);
-          }
-          if (data.stockCount && Number(data.stockCount) > 0) {
-            setStockEnabled(true);
-            setStockCount(Number(data.stockCount));
-          }
-          if (data.notes) {
-            setNotes((prev) => (prev ? `${prev} • ${data.notes}` : data.notes));
-          }
-
-          setScanSuccessMsg('✓ Yapay zeka ilaç kutusunu başarıyla tanıdı ve forma aktardı!');
-          setTimeout(() => setScanSuccessMsg(''), 6000);
-        } catch (fetchErr: any) {
-          setError(fetchErr.message || 'Görsel işlenirken bir sorun oluştu.');
-        } finally {
-          setIsScanning(false);
-        }
-      };
-      reader.readAsDataURL(file);
+        setScanSuccessMsg('✓ Yapay zeka ilaç kutusunu başarıyla tanıdı ve forma aktardı!');
+        setTimeout(() => setScanSuccessMsg(''), 7000);
+      }
     } catch (err: any) {
-      setError('Görsel yüklenirken bir sorun oluştu.');
+      console.error('OCR scan error:', err);
+      setError(err.message || 'Görsel analiz edilirken bir sorun oluştu.');
+    } finally {
       setIsScanning(false);
-    }
-
-    if (cameraInputRef.current) {
-      cameraInputRef.current.value = '';
+      if (cameraInputRef.current) {
+        cameraInputRef.current.value = '';
+      }
     }
   };
 

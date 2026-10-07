@@ -260,3 +260,131 @@ export async function searchMedicationVariants(
     },
   ];
 }
+
+/**
+ * Compresses and resizes camera photo before sending to prevent payload limit errors (413)
+ * and network timeouts on mobile phones.
+ */
+export async function resizeAndCompressImage(file: File, maxDim = 1200, quality = 0.85): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Dosya okunamadı.'));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Görsel formatı desteklenmiyor.'));
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(e.target?.result as string);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+        resolve(compressedBase64);
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Scans medication box image using backend AI route with direct client-side fallback
+ */
+export async function scanMedicationImage(
+  imageBase64: string,
+  userApiKey?: string
+): Promise<any> {
+  const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z]+;base64,/, '');
+
+  // 1. Try Backend endpoint first
+  try {
+    const response = await fetch('/api/ai/scan-medication', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        imageBase64: cleanBase64,
+        mimeType: 'image/jpeg',
+        userApiKey,
+      }),
+    });
+
+    const responseText = await response.text();
+    if (responseText && responseText.trim().startsWith('{')) {
+      const result = JSON.parse(responseText);
+      if (response.ok && result.success && result.data) {
+        return result.data;
+      }
+      if (result.error && !userApiKey) {
+        throw new Error(result.error);
+      }
+    }
+  } catch (err: any) {
+    console.warn('Backend OCR scan failed, checking direct Gemini fallback:', err.message);
+    if (!userApiKey) {
+      throw err;
+    }
+  }
+
+  // 2. Direct client-side Gemini fallback (essential for static Vercel / Netlify deployments)
+  if (userApiKey) {
+    try {
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${encodeURIComponent(userApiKey)}`;
+      const promptText = 
+        'Bu görsel bir ilaç kutusu, şişesi, reçetesi veya prospektüsüdür. ' +
+        'Lütfen görseli dikkatle inceleyerek ilacın adını (name), dozajını/miktarını (dosage, örn: 500 mg, 1 Tablet vb.), ' +
+        'ilaç formunu (tablet, capsule, syrup, injection, drop, spray, inhaler, cream, other seçeneklerinden biri), ' +
+        'kullanım talimatını (before_meal, after_meal, with_meal, anytime), ' +
+        'kutudaki adet sayısını (stockCount) ve kısa kullanım/uyarı notlarını (notes) içeren geçerli bir JSON üret: ' +
+        '{"name":"...","dosage":"...","form":"tablet","instructions":"after_meal","stockCount":30,"notes":"..."}';
+
+      const directRes = await fetch(geminiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { inlineData: { mimeType: 'image/jpeg', data: cleanBase64 } },
+                { text: promptText },
+              ],
+            },
+          ],
+          generationConfig: {
+            responseMimeType: 'application/json',
+          },
+        }),
+      });
+
+      const directText = await directRes.text();
+      if (directRes.ok && directText && directText.trim().startsWith('{')) {
+        const parsed = JSON.parse(directText);
+        const outputJsonStr = parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (outputJsonStr) {
+          return JSON.parse(outputJsonStr);
+        }
+      }
+    } catch (directErr: any) {
+      console.warn('Direct Gemini API fallback failed:', directErr);
+    }
+  }
+
+  throw new Error('İlaç kutusu okunamadı. Lütfen fotoğrafın net olduğundan veya Ayarlar sekmesinde ücretsiz Google Gemini API anahtarınızın girildiğinden emin olun.');
+}
