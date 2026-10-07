@@ -1,3 +1,6 @@
+import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
+
 export interface ScheduledAlarmItem {
   id: string;
   type: 'medication' | 'water';
@@ -7,7 +10,25 @@ export interface ScheduledAlarmItem {
   scheduledEpoch: number; // millisecond timestamp
 }
 
+function hashStringToInt(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const res = await LocalNotifications.requestPermissions();
+      return res.display === 'granted' ? 'granted' : 'denied';
+    } catch (e) {
+      console.warn('Native permission error:', e);
+    }
+  }
+
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return 'denied';
   }
@@ -27,6 +48,9 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
 }
 
 export function getNotificationPermission(): NotificationPermission {
+  if (Capacitor.isNativePlatform()) {
+    return 'granted';
+  }
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return 'denied';
   }
@@ -103,6 +127,28 @@ export async function sendLocalNotification(
  * can trigger showNotification even when screen is locked or in background.
  */
 export async function syncAlarmsToServiceWorker(alarms: ScheduledAlarmItem[]): Promise<void> {
+  // If running inside native Android APK via Capacitor: use Android native AlarmManager
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const pending = await LocalNotifications.getPending();
+      if (pending.notifications.length > 0) {
+        await LocalNotifications.cancel({ notifications: pending.notifications });
+      }
+      if (alarms.length > 0) {
+        const nativeNotifications = alarms.map((alarm) => ({
+          id: hashStringToInt(alarm.id),
+          title: alarm.title,
+          body: alarm.description,
+          schedule: { at: new Date(alarm.scheduledEpoch), allowWhileIdle: true },
+          sound: 'beep.wav',
+        }));
+        await LocalNotifications.schedule({ notifications: nativeNotifications });
+      }
+    } catch (nativeErr) {
+      console.warn('Native LocalNotifications schedule error:', nativeErr);
+    }
+  }
+
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
     return;
   }
@@ -131,6 +177,25 @@ export async function syncAlarmsToServiceWorker(alarms: ScheduledAlarmItem[]): P
  */
 export async function scheduleTestNotificationViaWorker(delayMs: number = 8000): Promise<boolean> {
   if (typeof window === 'undefined') return false;
+
+  // Native Android test notification
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id: 99999,
+            title: '💊 VitaRemind: Kilitli Ekran Testi',
+            body: 'Harika! Android native AlarmManager başarıyla bildirim gönderdi.',
+            schedule: { at: new Date(Date.now() + delayMs), allowWhileIdle: true },
+          },
+        ],
+      });
+      return true;
+    } catch (e) {
+      console.warn('Native test alarm error:', e);
+    }
+  }
 
   if ('serviceWorker' in navigator) {
     try {
