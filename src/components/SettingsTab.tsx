@@ -14,7 +14,7 @@ import {
   CheckCircle2,
   Key
 } from 'lucide-react';
-import { requestNotificationPermission, getNotificationPermission } from '../services/notificationService';
+import { requestNotificationPermission, getNotificationPermission, sendLocalNotification } from '../services/notificationService';
 import { playPillReminderSound, triggerVibration } from '../services/soundService';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 
@@ -34,9 +34,31 @@ export const SettingsTab: React.FC = () => {
     getNotificationPermission()
   );
   const [showGuideModal, setShowGuideModal] = useState(false);
+  const [showAndroidNotifModal, setShowAndroidNotifModal] = useState(false);
+  const [lockScreenCountdown, setLockScreenCountdown] = useState<number | null>(null);
   const [importSuccessMsg, setImportSuccessMsg] = useState('');
   const [importErrorMsg, setImportErrorMsg] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const testLockScreenNotification = () => {
+    setLockScreenCountdown(5);
+    let secondsLeft = 5;
+
+    const timer = setInterval(() => {
+      secondsLeft -= 1;
+      if (secondsLeft <= 0) {
+        clearInterval(timer);
+        setLockScreenCountdown(null);
+        sendLocalNotification('💊 VitaRemind: Kilitli Ekran Testi', {
+          body: 'Harika! Telefon kilitliyken veya uygulama arka plandayken bildirim başarıyla iletildi.',
+          vibrate: [500, 200, 500, 200, 500],
+          tag: 'test_lockscreen_alarm',
+        });
+      } else {
+        setLockScreenCountdown(secondsLeft);
+      }
+    }, 1000);
+  };
 
   const handleRequestPermission = async () => {
     const perm = await requestNotificationPermission();
@@ -197,6 +219,50 @@ export const SettingsTab: React.FC = () => {
               Bildirim İzni İste
             </button>
           )}
+        </div>
+
+        {/* Lock Screen Test & Android Background Guide Buttons */}
+        <div className="p-3.5 rounded-2xl bg-teal-50 border border-teal-200/90 space-y-2.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <span className="text-xs font-bold text-teal-950 block">
+                📱 Kilitli Ekran / Arka Plan Bildirim Testi
+              </span>
+              <p className="text-[11px] text-teal-800">
+                Butona bastıktan hemen sonra telefonunuzun ekranını kilitleyin, 5 saniye sonra bildirim gelecek.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={testLockScreenNotification}
+              disabled={lockScreenCountdown !== null}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shrink-0 ${
+                lockScreenCountdown !== null
+                  ? 'bg-amber-500 text-white animate-pulse'
+                  : 'bg-teal-700 hover:bg-teal-800 text-white shadow-xs'
+              }`}
+            >
+              {lockScreenCountdown !== null ? (
+                <span>Ekranı Kilitleyin! ({lockScreenCountdown}s)</span>
+              ) : (
+                <span>5 sn Sonra Gönder</span>
+              )}
+            </button>
+          </div>
+
+          <div className="pt-2 border-t border-teal-200 flex items-center justify-between">
+            <span className="text-[11px] text-teal-800 font-medium">
+              Ekran kapalıyken telefonunuz bildirimleri engelliyor mu?
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowAndroidNotifModal(true)}
+              className="text-xs font-bold text-teal-800 hover:text-teal-950 underline"
+            >
+              Android Ayar Rehberi
+            </button>
+          </div>
         </div>
 
         {/* Sound toggle & tone selection */}
@@ -404,6 +470,69 @@ export const SettingsTab: React.FC = () => {
               className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs transition"
             >
               Anladım
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Android Lock Screen & Background Settings Guide Modal */}
+      {showAndroidNotifModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl text-slate-800 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Bell className="w-5 h-5 text-teal-600" />
+                <h3 className="text-base font-bold text-slate-900">Kilitli Ekran & Arka Plan Ayarları</h3>
+              </div>
+              <button
+                onClick={() => setShowAndroidNotifModal(false)}
+                className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Android telefonlar (özellikle Xiaomi, Samsung, Huawei, Oppo) pil tasarrufu sağlamak için ekran kapandığında uygulamaların arka plan çalışmasını uyutabilir. Bildirimlerin her an sorunsuz çalması için telefonunuzda şu 3 ayarı kontrol edin:
+            </p>
+
+            <div className="space-y-2.5 text-xs">
+              <div className="p-3 bg-teal-50 rounded-2xl border border-teal-100 space-y-1">
+                <span className="font-bold text-teal-950 block text-xs">
+                  1. Pil Tasarrufu Kısıtlamasını Kaldırın (En Önemlisi ⚡)
+                </span>
+                <p className="text-slate-600">
+                  Telefonunuzun <strong>Ayarlar &gt; Uygulamalar &gt; Chrome (veya VitaRemind) &gt; Pil</strong> bölümüne gidin.
+                </p>
+                <p className="text-teal-900 font-semibold">
+                  👉 <strong>"Kısıtlanmadı" (Unrestricted / Sınırsız)</strong> seçeneğini işaretleyin. Böylece ekran kapalıyken sistem uygulamayı dondurmaz.
+                </p>
+              </div>
+
+              <div className="p-3 bg-sky-50 rounded-2xl border border-sky-100 space-y-1">
+                <span className="font-bold text-sky-950 block text-xs">
+                  2. Kilit Ekranı Bildirim İzni
+                </span>
+                <p className="text-slate-600">
+                  <strong>Ayarlar &gt; Bildirimler &gt; Kilit Ekranı Bildirimleri</strong> kısmında <strong>"İçeriği Göster"</strong> seçili olmalıdır.
+                </p>
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
+                <span className="font-bold text-slate-900 block text-xs">
+                  3. Uygulamayı Kapatırken
+                </span>
+                <p className="text-slate-600">
+                  Uygulamayı kullanmadığınızda telefonun orta tuşuyla (Home) ana ekrana dönün veya arka planda bırakın. Son uygulamalar ekranından yukarı kaydırıp tamamen zorla kapatırsanız Android tüm tarayıcı işlemlerini sonlandırır.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowAndroidNotifModal(false)}
+              className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs transition"
+            >
+              Anladım, Teşekkürler
             </button>
           </div>
         </div>

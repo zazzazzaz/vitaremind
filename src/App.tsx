@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
-import { Header } from './components/Header';
 import { Navbar, TabType } from './components/Navbar';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { AlarmModal } from './components/AlarmModal';
@@ -47,9 +46,6 @@ const AppContent: React.FC = () => {
     <div className="min-h-screen bg-slate-50 flex flex-col text-slate-800 antialiased selection:bg-teal-500 selection:text-white">
       {/* PWA Install Notification Bar */}
       <PWAInstallBanner />
-
-      {/* Main App Top Bar */}
-      <Header />
 
       {/* Main Scrollable View Area */}
       <main className="flex-1 w-full max-w-4xl mx-auto">

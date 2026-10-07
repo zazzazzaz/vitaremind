@@ -1,9 +1,24 @@
+export interface ScheduledAlarmItem {
+  id: string;
+  type: 'medication' | 'water';
+  title: string;
+  description: string;
+  scheduledTime: string; // "09:00"
+  scheduledEpoch: number; // millisecond timestamp
+}
+
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return 'denied';
   }
   try {
     const permission = await Notification.requestPermission();
+    if (permission === 'granted' && 'serviceWorker' in navigator) {
+      // Ensure service worker is ready and registered
+      try {
+        await navigator.serviceWorker.ready;
+      } catch {}
+    }
     return permission;
   } catch (err) {
     console.warn('Notification permission request error:', err);
@@ -18,22 +33,79 @@ export function getNotificationPermission(): NotificationPermission {
   return Notification.permission;
 }
 
-export function sendLocalNotification(title: string, options?: NotificationOptions): Notification | null {
-  if (typeof window === 'undefined' || !('Notification' in window)) {
-    return null;
+/**
+ * Sends a high-priority system notification.
+ * On Android, ServiceWorkerRegistration.showNotification is mandatory because
+ * mobile Chrome throws an illegal constructor error for new Notification().
+ */
+export async function sendLocalNotification(
+  title: string,
+  options?: NotificationOptions & { vibrate?: number[]; requireInteraction?: boolean }
+): Promise<boolean> {
+  if (typeof window === 'undefined') {
+    return false;
   }
 
-  if (Notification.permission === 'granted') {
+  if (Notification.permission !== 'granted') {
+    console.warn('Notification permission not granted:', Notification.permission);
+    return false;
+  }
+
+  const notificationOptions: NotificationOptions & { vibrate?: number[]; requireInteraction?: boolean } = {
+    icon: '/pwa-192x192.png',
+    badge: '/pwa-192x192.png',
+    vibrate: [400, 150, 400, 150, 500],
+    requireInteraction: true,
+    renotify: true,
+    data: {
+      url: '/',
+      timestamp: Date.now(),
+    },
+    ...options,
+  };
+
+  // 1. Preferred method for Android PWA: Service Worker showNotification
+  if ('serviceWorker' in navigator) {
     try {
-      const notif = new Notification(title, {
-        icon: '/pwa-192x192.png',
-        badge: '/pwa-192x192.png',
-        ...options,
-      });
-      return notif;
-    } catch (err) {
-      console.warn('Could not show notification:', err);
+      const registration = await navigator.serviceWorker.ready;
+      if (registration && registration.showNotification) {
+        await registration.showNotification(title, notificationOptions);
+        return true;
+      }
+    } catch (swErr) {
+      console.warn('Service Worker showNotification failed:', swErr);
     }
   }
-  return null;
+
+  // 2. Desktop fallback: new Notification constructor
+  try {
+    new Notification(title, notificationOptions);
+    return true;
+  } catch (desktopErr) {
+    console.warn('Desktop Notification constructor error:', desktopErr);
+    return false;
+  }
+}
+
+/**
+ * Synchronizes upcoming alarm schedule to the Service Worker so the Service Worker
+ * can trigger showNotification even when screen is locked or in background.
+ */
+export async function syncAlarmsToServiceWorker(alarms: ScheduledAlarmItem[]): Promise<void> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+    return;
+  }
+
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const targetWorker = reg.active || navigator.serviceWorker.controller;
+    if (targetWorker) {
+      targetWorker.postMessage({
+        type: 'SYNC_SCHEDULE',
+        alarms,
+      });
+    }
+  } catch (err) {
+    console.warn('Failed to sync alarms to Service Worker:', err);
+  }
 }

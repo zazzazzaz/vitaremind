@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { Medication, DoseLog, WaterLog, WaterSettings, AppSettings, ActiveAlarm } from '../types';
 import { playWaterDropSound, playPillReminderSound, playCelebrationSound, triggerVibration } from '../services/soundService';
-import { sendLocalNotification, getNotificationPermission } from '../services/notificationService';
+import { sendLocalNotification, getNotificationPermission, syncAlarmsToServiceWorker, ScheduledAlarmItem } from '../services/notificationService';
+import { startBackgroundKeepAlive, stopBackgroundKeepAlive } from '../services/backgroundKeepAlive';
 
 const STORAGE_KEY_MEDS = 'vitaremind_medications_v1';
 const STORAGE_KEY_DOSE_LOGS = 'vitaremind_dose_logs_v1';
@@ -312,6 +313,106 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const interval = setInterval(checkSchedule, 12000);
     return () => clearInterval(interval);
   }, [todayPillsDue, waterSettings, todayWaterLogs, todayWaterTotal, todayStr]);
+
+  // Keep-Alive Service: Keeps mobile browser active when screen is turned off or in background
+  useEffect(() => {
+    if (appSettings.notificationsEnabled) {
+      startBackgroundKeepAlive();
+
+      // Ensure audio context is unlocked on first user touch/click
+      const onUserGesture = () => {
+        startBackgroundKeepAlive();
+      };
+      window.addEventListener('click', onUserGesture, { once: true });
+      window.addEventListener('touchstart', onUserGesture, { once: true });
+
+      return () => {
+        window.removeEventListener('click', onUserGesture);
+        window.removeEventListener('touchstart', onUserGesture);
+      };
+    } else {
+      stopBackgroundKeepAlive();
+    }
+  }, [appSettings.notificationsEnabled]);
+
+  // Sync all upcoming alarms to Service Worker for background and lock screen notifications
+  useEffect(() => {
+    if (!appSettings.notificationsEnabled) return;
+
+    const now = new Date();
+    const nowEpoch = now.getTime();
+    const scheduledItems: ScheduledAlarmItem[] = [];
+
+    // 1. Pending Pills for today
+    todayPillsDue.forEach((item) => {
+      const { med, time, log } = item;
+      if (log && (log.status === 'taken' || log.status === 'skipped')) {
+        return;
+      }
+
+      let targetEpoch = 0;
+      if (log && log.status === 'snoozed' && log.snoozeUntil) {
+        targetEpoch = new Date(log.snoozeUntil).getTime();
+      } else {
+        const [h, m] = time.split(':').map(Number);
+        const d = new Date();
+        d.setHours(h, m, 0, 0);
+        targetEpoch = d.getTime();
+      }
+
+      // If scheduled in the future or within the last 60 seconds
+      if (targetEpoch > nowEpoch - 60000) {
+        scheduledItems.push({
+          id: `med_${med.id}_${time}`,
+          type: 'medication',
+          title: `💊 İlaç Vakti: ${med.name}`,
+          description: `${med.dosage} (${formatInstructions(med.instructions)}) almanız gerekiyor.`,
+          scheduledTime: time,
+          scheduledEpoch: targetEpoch,
+        });
+      }
+    });
+
+    // 2. Next Water reminder if enabled
+    if (waterSettings.reminderEnabled) {
+      const nextWaterEpoch = nowEpoch + waterSettings.intervalMinutes * 60 * 1000;
+      scheduledItems.push({
+        id: `water_${Date.now()}`,
+        type: 'water',
+        title: '💧 Su İçme Vakti!',
+        description: `Vücudunuzu hidrate tutma zamanı. Günlük hedefiniz: ${todayWaterTotal} / ${waterSettings.dailyGoalMl} ml.`,
+        scheduledTime: new Date(nextWaterEpoch).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+        scheduledEpoch: nextWaterEpoch,
+      });
+    }
+
+    syncAlarmsToServiceWorker(scheduledItems);
+  }, [todayPillsDue, waterSettings, todayWaterTotal, appSettings.notificationsEnabled]);
+
+  // Listen for actions from Service Worker notification click (e.g. from lock screen)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'NOTIFICATION_ACTION') {
+        const { action, alarmId } = event.data;
+        if (action === 'take' && alarmId) {
+          // alarmId format: med_<id>_<time>
+          const parts = alarmId.split('_');
+          if (parts.length >= 3) {
+            const medId = parts[1];
+            const time = parts.slice(2).join('_');
+            recordDose(medId, time, 'taken');
+          }
+        }
+      }
+    };
+
+    navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage);
+    };
+  }, []);
 
   const triggerAlarm = (alarm: ActiveAlarm) => {
     setActiveAlarm(alarm);
