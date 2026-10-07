@@ -1,4 +1,5 @@
 import express from 'express';
+import http from 'http';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
@@ -38,7 +39,21 @@ async function startServer() {
 
       const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
       let parsedData: any = null;
-      let lastError: any = null;
+      let lastErrorMessage = '';
+
+      const promptText = 
+        'Bu görsel bir ilaç kutusu, şişesi, reçetesi veya prospektüsüdür. ' +
+        'Lütfen görseli dikkatle inceleyerek ilacın adını ve kullanım bilgilerini tespit et. ' +
+        'YALNIZCA geçerli bir JSON nesnesi döndür: ' +
+        '{\n' +
+        '  "name": "İlacın ticari ve etken adı (Örn: Parol 500 mg Tablet)",\n' +
+        '  "dosage": "Doz veya miktar (Örn: 500 mg, 1 Tablet, 1 Ölçek)",\n' +
+        '  "form": "tablet | capsule | syrup | injection | drop | spray | inhaler | cream | other",\n' +
+        '  "instructions": "before_meal | after_meal | with_meal | anytime",\n' +
+        '  "stockCount": 30,\n' +
+        '  "notes": "Önemli kullanım uyarısı veya kısa açıklama"\n' +
+        '}\n' +
+        'Eğer görselde ilaç adı bulunamıyorsa name alanına "Bilinmiyor" yaz. Hiçbir markdown etiketi (```json) eklemeden sadece saf JSON döndür.';
 
       for (const modelName of modelsToTry) {
         try {
@@ -55,61 +70,70 @@ async function startServer() {
                     },
                   },
                   {
-                    text: 'Bu görsel bir ilaç kutusu, şişesi, reçetesi veya prospektüsüdür. ' +
-                          'Lütfen görseli dikkatle inceleyerek ilacın adını (name), dozajını/miktarını (dosage, örn: 500 mg, 1 Tablet vb.), ' +
-                          'ilaç formunu (tablet, capsule, syrup, injection, drop, spray, inhaler, cream, other seçeneklerinden biri), ' +
-                          'kullanım talimatını (before_meal: aç, after_meal: tok, with_meal: yemekle, anytime: fark etmez), ' +
-                          'kalan tahmini veya kutudaki toplam adet sayısını (stockCount) ve varsa önemli kullanım notlarını (notes) Türkçe olarak çıkar.',
+                    text: promptText,
                   },
                 ],
               },
             ],
             config: {
               responseMimeType: 'application/json',
-              responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                  name: {
-                    type: Type.STRING,
-                    description: 'İlacın veya takviyenin ticari/etken adı',
-                  },
-                  dosage: {
-                    type: Type.STRING,
-                    description: 'Doz veya ölçü (Örn: 500 mg, 1 Kapsül)',
-                  },
-                  form: {
-                    type: Type.STRING,
-                    enum: ['tablet', 'capsule', 'syrup', 'injection', 'drop', 'spray', 'inhaler', 'cream', 'other'],
-                    description: 'İlacın formu',
-                  },
-                  instructions: {
-                    type: Type.STRING,
-                    enum: ['before_meal', 'after_meal', 'with_meal', 'anytime'],
-                    description: 'Kullanım zamanı',
-                  },
-                  stockCount: {
-                    type: Type.INTEGER,
-                    description: 'Kutudaki toplam veya kalan hap/adet sayısı',
-                  },
-                  notes: {
-                    type: Type.STRING,
-                    description: 'Kullanım uyarısı veya açıklayıcı kısa not',
-                  },
-                },
-                required: ['name', 'form', 'instructions'],
-              },
             },
           });
 
-          const text = response.text || '{}';
-          const data = JSON.parse(text);
-          if (data && data.name) {
-            parsedData = data;
-            break;
+          const rawText = response.text || '';
+          if (rawText && rawText.trim()) {
+            // Clean markdown fences if any
+            let cleanText = rawText.trim();
+            cleanText = cleanText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/g, '').trim();
+
+            let candidateObj: any = null;
+            try {
+              candidateObj = JSON.parse(cleanText);
+            } catch {
+              const start = cleanText.indexOf('{');
+              const end = cleanText.lastIndexOf('}');
+              if (start !== -1 && end > start) {
+                try {
+                  candidateObj = JSON.parse(cleanText.slice(start, end + 1));
+                } catch {}
+              }
+            }
+
+            if (candidateObj && candidateObj.name && candidateObj.name !== 'Bilinmiyor' && candidateObj.name !== 'N/A') {
+              // Normalize form
+              let form = 'tablet';
+              const f = String(candidateObj.form || '').toLowerCase();
+              if (f.includes('kapsül') || f.includes('capsule')) form = 'capsule';
+              else if (f.includes('şurup') || f.includes('syrup')) form = 'syrup';
+              else if (f.includes('damla') || f.includes('drop')) form = 'drop';
+              else if (f.includes('sprey') || f.includes('spray')) form = 'spray';
+              else if (f.includes('iğne') || f.includes('enjek') || f.includes('inj')) form = 'injection';
+              else if (f.includes('krem') || f.includes('merhem') || f.includes('cream')) form = 'cream';
+              else if (f.includes('inhaler') || f.includes('fıs')) form = 'inhaler';
+              else if (f.includes('diğer') || f.includes('other')) form = 'other';
+
+              // Normalize instructions
+              let instructions = 'after_meal';
+              const inst = String(candidateObj.instructions || '').toLowerCase();
+              if (inst.includes('aç') || inst.includes('before')) instructions = 'before_meal';
+              else if (inst.includes('yemekle') || inst.includes('with') || inst.includes('birlikte')) instructions = 'with_meal';
+              else if (inst.includes('fark') || inst.includes('anytime') || inst.includes('zaman')) instructions = 'anytime';
+              else if (inst.includes('tok') || inst.includes('after')) instructions = 'after_meal';
+
+              parsedData = {
+                name: candidateObj.name.trim(),
+                dosage: candidateObj.dosage ? String(candidateObj.dosage).trim() : '1 Doz',
+                form,
+                instructions,
+                stockCount: Number(candidateObj.stockCount) > 0 ? Number(candidateObj.stockCount) : 30,
+                notes: candidateObj.notes ? String(candidateObj.notes).trim() : '',
+              };
+              break;
+            }
           }
         } catch (err: any) {
-          lastError = err;
-          console.warn(`Vision model ${modelName} failed:`, err.message);
+          lastErrorMessage = err.message || '';
+          console.warn(`Vision model ${modelName} failed:`, lastErrorMessage);
         }
       }
 
@@ -117,11 +141,13 @@ async function startServer() {
         return res.json({ success: true, data: parsedData });
       }
 
-      throw lastError || new Error('Görselden ilaç bilgisi okunamadı.');
+      return res.status(422).json({
+        error: 'Fotoğraftan ilaç kutusu veya adı okunamadı. Lütfen kutu üzerindeki yazının net göründüğü bir fotoğraf çekiniz veya yukarıdaki arama kutusuna ilacın adını yazınız.',
+      });
     } catch (err: any) {
       console.error('Gemini OCR Error:', err);
       return res.status(500).json({
-        error: err.message || 'Görsel analiz edilirken bir hata oluştu.',
+        error: 'Görsel analiz edilirken bir hata oluştu. Lütfen tekrar deneyiniz veya ilacın adını yazarak aratınız.',
       });
     }
   });
@@ -367,15 +393,20 @@ async function startServer() {
     }
   }));
 
+  const server = http.createServer(app);
+
   // Mount Vite middleware in development
   const vite = await createViteServer({
-    server: { middlewareMode: true },
+    server: { 
+      middlewareMode: true,
+      hmr: { server },
+    },
     appType: 'spa',
   });
 
   app.use(vite.middlewares);
 
-  app.listen(port, '0.0.0.0', () => {
+  server.listen(port, '0.0.0.0', () => {
     console.log(`Server running on port ${port}`);
   });
 }

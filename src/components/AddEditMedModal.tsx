@@ -195,7 +195,7 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
 
     try {
       // 1. Client-side resize and compression to prevent memory & 413 payload limit errors
-      const compressedBase64 = await resizeAndCompressImage(file, 1200, 0.85);
+      const compressedBase64 = await resizeAndCompressImage(file, 1000, 0.75);
 
       // 2. Scan medication with safe response handling and direct Gemini fallback
       const data = await scanMedicationImage(compressedBase64, appSettings.geminiApiKey);
@@ -222,7 +222,12 @@ export const AddEditMedModal: React.FC<AddEditMedModalProps> = ({
       }
     } catch (err: any) {
       console.error('OCR scan error:', err);
-      setError(err.message || 'Görsel analiz edilirken bir sorun oluştu.');
+      const msg = err.message || '';
+      if (!msg || msg.includes('JSON') || msg.includes('Response') || msg.includes('fetch')) {
+        setError('Fotoğraftan ilaç bilgisi okunamadı. Lütfen kutu üzerindeki yazının net ve aydınlık göründüğü bir fotoğraf çekiniz veya yukarıdaki arama kutusuna ilacın adını (örn: Coraspin) yazarak seçiniz.');
+      } else {
+        setError(msg);
+      }
     } finally {
       setIsScanning(false);
       if (cameraInputRef.current) {

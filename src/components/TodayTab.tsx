@@ -64,7 +64,7 @@ export const TodayTab: React.FC<TodayTabProps> = ({ onNavigateToTab, onOpenAddMe
   return (
     <div className="space-y-6 pb-24 max-w-4xl mx-auto px-4 pt-4">
       {/* Date & Welcome Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+      <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2 text-slate-500 text-xs font-semibold uppercase tracking-wider">
             <Calendar className="w-3.5 h-3.5 text-teal-600" />
@@ -73,12 +73,6 @@ export const TodayTab: React.FC<TodayTabProps> = ({ onNavigateToTab, onOpenAddMe
           <h2 className="text-2xl font-black text-slate-900 tracking-tight mt-0.5">
             Merhaba, {appSettings.userName || 'Kullanıcı'} 👋
           </h2>
-        </div>
-
-        {/* Ad-Free Assurance tag */}
-        <div className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-800 text-xs font-semibold">
-          <ShieldCheck className="w-3.5 h-3.5 text-teal-600" />
-          <span>%100 Reklamsız & Özel</span>
         </div>
       </div>
 

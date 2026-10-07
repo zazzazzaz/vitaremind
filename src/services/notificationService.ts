@@ -109,3 +109,39 @@ export async function syncAlarmsToServiceWorker(alarms: ScheduledAlarmItem[]): P
     console.warn('Failed to sync alarms to Service Worker:', err);
   }
 }
+
+/**
+ * Schedules a test notification directly inside the Service Worker so that
+ * when the user turns off the screen or locks the device, the notification fires
+ * reliably without being frozen by browser tab suspension.
+ */
+export async function scheduleTestNotificationViaWorker(delayMs: number = 5000): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+
+  if ('serviceWorker' in navigator) {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const targetWorker = reg.active || navigator.serviceWorker.controller;
+      if (targetWorker) {
+        targetWorker.postMessage({
+          type: 'SCHEDULE_TEST_ALARM',
+          delayMs,
+          title: '💊 VitaRemind: Kilitli Ekran Testi',
+          body: 'Harika! Telefonunuz kilitliyken veya uygulama kapalıyken bildirim başarıyla iletildi.',
+        });
+        return true;
+      }
+    } catch (swErr) {
+      console.warn('Service worker test schedule error:', swErr);
+    }
+  }
+
+  // Fallback if no service worker available
+  setTimeout(() => {
+    sendLocalNotification('💊 VitaRemind: Kilitli Ekran Testi', {
+      body: 'Harika! Bildirim başarıyla iletildi.',
+      tag: 'test_lockscreen_alarm',
+    });
+  }, delayMs);
+  return true;
+}

@@ -265,7 +265,7 @@ export async function searchMedicationVariants(
  * Compresses and resizes camera photo before sending to prevent payload limit errors (413)
  * and network timeouts on mobile phones.
  */
-export async function resizeAndCompressImage(file: File, maxDim = 1200, quality = 0.85): Promise<string> {
+export async function resizeAndCompressImage(file: File, maxDim = 1000, quality = 0.75): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Dosya okunamadı.'));
@@ -306,6 +306,28 @@ export async function resizeAndCompressImage(file: File, maxDim = 1200, quality 
 }
 
 /**
+ * Safely parses JSON string even if surrounded by markdown fences or extra text
+ */
+function safeExtractJSON(raw: string): any {
+  if (!raw || typeof raw !== 'string') return null;
+  let text = raw.trim();
+  text = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/g, '').trim();
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start !== -1 && end > start) {
+      try {
+        return JSON.parse(text.slice(start, end + 1));
+      } catch {}
+    }
+    return null;
+  }
+}
+
+/**
  * Scans medication box image using backend AI route with direct client-side fallback
  */
 export async function scanMedicationImage(
@@ -327,33 +349,30 @@ export async function scanMedicationImage(
     });
 
     const responseText = await response.text();
-    if (responseText && responseText.trim().startsWith('{')) {
-      const result = JSON.parse(responseText);
-      if (response.ok && result.success && result.data) {
-        return result.data;
-      }
-      if (result.error && !userApiKey) {
-        throw new Error(result.error);
-      }
+    const result = safeExtractJSON(responseText);
+
+    if (response.ok && result && result.success && result.data) {
+      return result.data;
+    }
+
+    if (result && result.error && !userApiKey) {
+      throw new Error(result.error);
     }
   } catch (err: any) {
     console.warn('Backend OCR scan failed, checking direct Gemini fallback:', err.message);
-    if (!userApiKey) {
+    if (!userApiKey && err.message && !err.message.includes('Unexpected') && !err.message.includes('fetch')) {
       throw err;
     }
   }
 
-  // 2. Direct client-side Gemini fallback (essential for static Vercel / Netlify deployments)
+  // 2. Direct client-side Gemini fallback (essential for static deployments or direct key)
   if (userApiKey) {
     try {
       const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${encodeURIComponent(userApiKey)}`;
       const promptText = 
-        'Bu görsel bir ilaç kutusu, şişesi, reçetesi veya prospektüsüdür. ' +
-        'Lütfen görseli dikkatle inceleyerek ilacın adını (name), dozajını/miktarını (dosage, örn: 500 mg, 1 Tablet vb.), ' +
-        'ilaç formunu (tablet, capsule, syrup, injection, drop, spray, inhaler, cream, other seçeneklerinden biri), ' +
-        'kullanım talimatını (before_meal, after_meal, with_meal, anytime), ' +
-        'kutudaki adet sayısını (stockCount) ve kısa kullanım/uyarı notlarını (notes) içeren geçerli bir JSON üret: ' +
-        '{"name":"...","dosage":"...","form":"tablet","instructions":"after_meal","stockCount":30,"notes":"..."}';
+        'Bu görsel bir ilaç kutusu, şişesi veya reçetesidir. ' +
+        'Görseldeki ilacı tespit et ve SADECE saf JSON formatında yanıt ver: ' +
+        '{"name":"İlaç Adı","dosage":"1 Tablet","form":"tablet","instructions":"after_meal","stockCount":30,"notes":""}';
 
       const directRes = await fetch(geminiUrl, {
         method: 'POST',
@@ -374,11 +393,12 @@ export async function scanMedicationImage(
       });
 
       const directText = await directRes.text();
-      if (directRes.ok && directText && directText.trim().startsWith('{')) {
-        const parsed = JSON.parse(directText);
-        const outputJsonStr = parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (outputJsonStr) {
-          return JSON.parse(outputJsonStr);
+      const directParsed = safeExtractJSON(directText);
+      const outputJsonStr = directParsed?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (outputJsonStr) {
+        const drugObj = safeExtractJSON(outputJsonStr);
+        if (drugObj && drugObj.name) {
+          return drugObj;
         }
       }
     } catch (directErr: any) {
@@ -386,5 +406,5 @@ export async function scanMedicationImage(
     }
   }
 
-  throw new Error('İlaç kutusu okunamadı. Lütfen fotoğrafın net olduğundan veya Ayarlar sekmesinde ücretsiz Google Gemini API anahtarınızın girildiğinden emin olun.');
+  throw new Error('İlaç kutusu okunamadı. Lütfen kutu üzerindeki yazının net göründüğü bir fotoğraf çekiniz veya yukarıdaki arama kutusuna ilacın adını (örn: Coraspin, Parol) yazarak seçiniz.');
 }

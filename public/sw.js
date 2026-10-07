@@ -80,29 +80,43 @@ function scheduleAlarmsInWorker(alarms) {
   scheduledAlarmsList.forEach((alarm) => {
     const delay = alarm.scheduledEpoch - now;
 
-    // If within next 24 hours and in future (or within last 30s)
+    const notifOptions = {
+      body: alarm.description,
+      icon: '/pwa-192x192.png',
+      badge: '/pwa-192x192.png',
+      vibrate: [500, 200, 500, 200, 500],
+      requireInteraction: true,
+      renotify: true,
+      tag: alarm.id,
+      data: {
+        url: '/',
+        alarmId: alarm.id,
+        type: alarm.type,
+      },
+      actions: [
+        { action: 'take', title: '✓ Aldım / Tamam' },
+        { action: 'snooze', title: '⏱ 15 Dk Ertele' },
+      ],
+    };
+
+    // 1. If Chrome on Android supports Notification Triggers (Native OS Alarm Manager)
+    if (typeof TimestampTrigger !== 'undefined' && 'showTrigger' in Notification.prototype) {
+      try {
+        self.registration.showNotification(alarm.title, {
+          ...notifOptions,
+          showTrigger: new TimestampTrigger(alarm.scheduledEpoch),
+        });
+      } catch (triggerErr) {
+        console.warn('TimestampTrigger registration failed:', triggerErr);
+      }
+    }
+
+    // 2. In-memory timer for imminent alarms (< 24 hours)
     if (delay > -30000 && delay < 24 * 60 * 60 * 1000) {
       const waitMs = Math.max(0, delay);
 
       const timeoutId = setTimeout(() => {
-        self.registration.showNotification(alarm.title, {
-          body: alarm.description,
-          icon: '/pwa-192x192.png',
-          badge: '/pwa-192x192.png',
-          vibrate: [400, 150, 400, 150, 500],
-          requireInteraction: true,
-          renotify: true,
-          tag: alarm.id,
-          data: {
-            url: '/',
-            alarmId: alarm.id,
-            type: alarm.type,
-          },
-          actions: [
-            { action: 'take', title: '✓ Aldım / Tamam' },
-            { action: 'snooze', title: '⏱ 15 Dk Ertele' },
-          ],
-        });
+        self.registration.showNotification(alarm.title, notifOptions);
       }, waitMs);
 
       activeAlarmTimeouts.push(timeoutId);
@@ -118,7 +132,56 @@ self.addEventListener('message', (event) => {
     scheduleAlarmsInWorker(event.data.alarms);
   } else if (event.data.type === 'TRIGGER_NOTIFICATION') {
     self.registration.showNotification(event.data.title, event.data.options);
+  } else if (event.data.type === 'SCHEDULE_TEST_ALARM') {
+    const { delayMs, title, body } = event.data;
+    const targetEpoch = Date.now() + (delayMs || 5000);
+
+    const testOptions = {
+      body: body || 'Harika! Telefon kilitliyken bildirim başarıyla iletildi.',
+      icon: '/pwa-192x192.png',
+      badge: '/pwa-192x192.png',
+      vibrate: [600, 250, 600, 250, 600],
+      requireInteraction: true,
+      renotify: true,
+      tag: 'test_lockscreen_alarm',
+      data: { url: '/' },
+    };
+
+    if (typeof TimestampTrigger !== 'undefined' && 'showTrigger' in Notification.prototype) {
+      try {
+        self.registration.showNotification(title || '💊 VitaRemind: Kilitli Ekran Testi', {
+          ...testOptions,
+          showTrigger: new TimestampTrigger(targetEpoch),
+        });
+      } catch {}
+    }
+
+    setTimeout(() => {
+      self.registration.showNotification(title || '💊 VitaRemind: Kilitli Ekran Testi', testOptions);
+    }, delayMs || 5000);
   }
+});
+
+// Push notification support
+self.addEventListener('push', (event) => {
+  let data = { title: '💊 VitaRemind Hatırlatıcı', body: 'İlaç veya su vaktiniz geldi!' };
+  try {
+    if (event.data) {
+      data = event.data.json();
+    }
+  } catch {}
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: '/pwa-192x192.png',
+      badge: '/pwa-192x192.png',
+      vibrate: [500, 200, 500, 200, 500],
+      requireInteraction: true,
+      renotify: true,
+      tag: 'push_alarm',
+    })
+  );
 });
 
 // Periodic background sync if supported by Android browser

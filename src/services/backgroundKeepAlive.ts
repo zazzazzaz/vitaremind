@@ -29,6 +29,15 @@ export function startBackgroundKeepAlive(): void {
       playPromise
         .then(() => {
           isKeepAliveActive = true;
+          // Register MediaSession on Android to prevent OS Doze mode
+          if ('mediaSession' in navigator) {
+            navigator.mediaSession.metadata = new MediaMetadata({
+              title: 'VitaRemind Alarm Servisi',
+              artist: 'Arka Plan Bildirim Koruması Aktif',
+              album: 'VitaRemind',
+            });
+            navigator.mediaSession.playbackState = 'playing';
+          }
         })
         .catch(() => {
           // Requires user interaction, will start on next tap
@@ -44,6 +53,9 @@ export function stopBackgroundKeepAlive(): void {
   if (silentAudio && isKeepAliveActive) {
     try {
       silentAudio.pause();
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'paused';
+      }
     } catch {}
     isKeepAliveActive = false;
   }

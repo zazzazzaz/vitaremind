@@ -14,7 +14,12 @@ import {
   CheckCircle2,
   Key
 } from 'lucide-react';
-import { requestNotificationPermission, getNotificationPermission, sendLocalNotification } from '../services/notificationService';
+import { 
+  requestNotificationPermission, 
+  getNotificationPermission, 
+  sendLocalNotification,
+  scheduleTestNotificationViaWorker 
+} from '../services/notificationService';
 import { playPillReminderSound, triggerVibration } from '../services/soundService';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 
@@ -40,20 +45,19 @@ export const SettingsTab: React.FC = () => {
   const [importErrorMsg, setImportErrorMsg] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const testLockScreenNotification = () => {
-    setLockScreenCountdown(5);
-    let secondsLeft = 5;
+  const testLockScreenNotification = async () => {
+    // 1. Immediately schedule in Service Worker with native trigger / worker timer
+    await scheduleTestNotificationViaWorker(8000);
+
+    // 2. Visual countdown in UI
+    setLockScreenCountdown(8);
+    let secondsLeft = 8;
 
     const timer = setInterval(() => {
       secondsLeft -= 1;
       if (secondsLeft <= 0) {
         clearInterval(timer);
         setLockScreenCountdown(null);
-        sendLocalNotification('💊 VitaRemind: Kilitli Ekran Testi', {
-          body: 'Harika! Telefon kilitliyken veya uygulama arka plandayken bildirim başarıyla iletildi.',
-          vibrate: [500, 200, 500, 200, 500],
-          tag: 'test_lockscreen_alarm',
-        });
       } else {
         setLockScreenCountdown(secondsLeft);
       }
@@ -229,7 +233,7 @@ export const SettingsTab: React.FC = () => {
                 📱 Kilitli Ekran / Arka Plan Bildirim Testi
               </span>
               <p className="text-[11px] text-teal-800">
-                Butona bastıktan hemen sonra telefonunuzun ekranını kilitleyin, 5 saniye sonra bildirim gelecek.
+                Butona bastıktan sonra telefonunuzun ekranını kapatıp kilitleyin. Servis Çalışanı (Service Worker) 8 saniye sonra kilit ekranına bildirim düşürecektir.
               </p>
             </div>
 
@@ -246,7 +250,7 @@ export const SettingsTab: React.FC = () => {
               {lockScreenCountdown !== null ? (
                 <span>Ekranı Kilitleyin! ({lockScreenCountdown}s)</span>
               ) : (
-                <span>5 sn Sonra Gönder</span>
+                <span>8 sn Sonra Gönder</span>
               )}
             </button>
           </div>
