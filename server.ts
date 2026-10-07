@@ -366,6 +366,7 @@ async function startServer() {
     if (fs.existsSync(swPath)) {
       res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
       res.setHeader('Service-Worker-Allowed', '/');
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
       return res.sendFile(swPath);
     }
     res.status(404).send('Not found');

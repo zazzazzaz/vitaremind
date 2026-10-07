@@ -46,7 +46,7 @@ export const SettingsTab: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const testLockScreenNotification = async () => {
-    // 1. Immediately schedule in Service Worker with native trigger / worker timer
+    // 1. Immediately schedule in Service Worker with worker waitUntil timer
     await scheduleTestNotificationViaWorker(8000);
 
     // 2. Visual countdown in UI
@@ -58,6 +58,20 @@ export const SettingsTab: React.FC = () => {
       if (secondsLeft <= 0) {
         clearInterval(timer);
         setLockScreenCountdown(null);
+
+        // Play the chosen alarm sound
+        if (appSettings.soundEnabled) {
+          playPillReminderSound(appSettings.soundVolume, appSettings.reminderTone);
+        }
+        if (appSettings.vibrationEnabled) {
+          triggerVibration([200, 100, 200, 100, 300]);
+        }
+
+        // Fire local notification (identical tag ensures no duplicates with SW)
+        sendLocalNotification('💊 VitaRemind: Kilitli Ekran Testi', {
+          body: 'Harika! VitaRemind bildirim ve hatırlatıcı sistemi başarıyla çalışıyor.',
+          tag: 'test_lockscreen_alarm',
+        });
       } else {
         setLockScreenCountdown(secondsLeft);
       }
@@ -322,6 +336,21 @@ export const SettingsTab: React.FC = () => {
                       {t.label}
                     </button>
                   ))}
+                </div>
+
+                {/* Tone explanation & notification sound notice */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] text-slate-600 space-y-1">
+                  <p>
+                    <span className="font-semibold text-slate-800">
+                      {appSettings.reminderTone === 'gentle' && '🎵 Nazik Melodi: Sakinleştirici, yumuşak 4 notalı arp melodisi.'}
+                      {appSettings.reminderTone === 'chime' && '🔔 Harmonik Çan: Kristal berraklığında çift çan tınısı ve parlak harmonik çınlama.'}
+                      {appSettings.reminderTone === 'digital' && '📟 Modern Bip: Akıllı saat tarzı net çift bip sesi.'}
+                      {appSettings.reminderTone === 'zen' && '🧘 Zen / Huzur: Derin Tibet meditasyon kasesi tınısı.'}
+                    </span>
+                  </p>
+                  <p className="text-slate-500">
+                    ℹ️ <em>Not: Bu melodi VitaRemind alarm ekranında ve hatırlatıcılarında hoparlörden çalar. Kilit ekranındaki arka plan bildirim sesi ise Android sisteminizde telefonun Chrome bildirim zil sesine göre çalmaktadır.</em>
+                  </p>
                 </div>
               </div>
 

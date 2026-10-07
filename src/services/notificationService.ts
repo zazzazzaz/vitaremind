@@ -67,9 +67,20 @@ export async function sendLocalNotification(
   // 1. Preferred method for Android PWA: Service Worker showNotification
   if ('serviceWorker' in navigator) {
     try {
-      const registration = await navigator.serviceWorker.ready;
-      if (registration && registration.showNotification) {
-        await registration.showNotification(title, notificationOptions);
+      // First check existing registration without waiting for .ready promise to avoid hanging
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg && reg.showNotification) {
+        await reg.showNotification(title, notificationOptions);
+        return true;
+      }
+
+      // If not immediately ready, race navigator.serviceWorker.ready with a 1.2s timeout
+      const readyReg = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200))
+      ]);
+      if (readyReg && readyReg.showNotification) {
+        await readyReg.showNotification(title, notificationOptions);
         return true;
       }
     } catch (swErr) {
@@ -97,8 +108,11 @@ export async function syncAlarmsToServiceWorker(alarms: ScheduledAlarmItem[]): P
   }
 
   try {
-    const reg = await navigator.serviceWorker.ready;
-    const targetWorker = reg.active || navigator.serviceWorker.controller;
+    const reg = await navigator.serviceWorker.getRegistration() || await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000))
+    ]);
+    const targetWorker = reg?.active || navigator.serviceWorker.controller;
     if (targetWorker) {
       targetWorker.postMessage({
         type: 'SYNC_SCHEDULE',
@@ -115,19 +129,22 @@ export async function syncAlarmsToServiceWorker(alarms: ScheduledAlarmItem[]): P
  * when the user turns off the screen or locks the device, the notification fires
  * reliably without being frozen by browser tab suspension.
  */
-export async function scheduleTestNotificationViaWorker(delayMs: number = 5000): Promise<boolean> {
+export async function scheduleTestNotificationViaWorker(delayMs: number = 8000): Promise<boolean> {
   if (typeof window === 'undefined') return false;
 
   if ('serviceWorker' in navigator) {
     try {
-      const reg = await navigator.serviceWorker.ready;
-      const targetWorker = reg.active || navigator.serviceWorker.controller;
+      const reg = await navigator.serviceWorker.getRegistration() || await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000))
+      ]);
+      const targetWorker = reg?.active || navigator.serviceWorker.controller;
       if (targetWorker) {
         targetWorker.postMessage({
           type: 'SCHEDULE_TEST_ALARM',
           delayMs,
           title: '💊 VitaRemind: Kilitli Ekran Testi',
-          body: 'Harika! Telefonunuz kilitliyken veya uygulama kapalıyken bildirim başarıyla iletildi.',
+          body: 'Harika! Telefonunuz kilitliyken veya uygulama açıkken bildirim başarıyla iletildi.',
         });
         return true;
       }
@@ -136,12 +153,5 @@ export async function scheduleTestNotificationViaWorker(delayMs: number = 5000):
     }
   }
 
-  // Fallback if no service worker available
-  setTimeout(() => {
-    sendLocalNotification('💊 VitaRemind: Kilitli Ekran Testi', {
-      body: 'Harika! Bildirim başarıyla iletildi.',
-      tag: 'test_lockscreen_alarm',
-    });
-  }, delayMs);
-  return true;
+  return false;
 }

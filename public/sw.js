@@ -1,5 +1,5 @@
 // VitaRemind Service Worker with Android Background Alarms & Notification Support
-const CACHE_NAME = 'vitaremind-cache-v2';
+const CACHE_NAME = 'vitaremind-cache-v4';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -100,23 +100,21 @@ function scheduleAlarmsInWorker(alarms) {
     };
 
     // 1. If Chrome on Android supports Notification Triggers (Native OS Alarm Manager)
-    if (typeof TimestampTrigger !== 'undefined' && 'showTrigger' in Notification.prototype) {
-      try {
+    try {
+      if (typeof TimestampTrigger !== 'undefined' && self.registration && 'showTrigger' in self.registration) {
         self.registration.showNotification(alarm.title, {
           ...notifOptions,
           showTrigger: new TimestampTrigger(alarm.scheduledEpoch),
-        });
-      } catch (triggerErr) {
-        console.warn('TimestampTrigger registration failed:', triggerErr);
+        }).catch(() => {});
       }
-    }
+    } catch (triggerErr) {}
 
     // 2. In-memory timer for imminent alarms (< 24 hours)
     if (delay > -30000 && delay < 24 * 60 * 60 * 1000) {
       const waitMs = Math.max(0, delay);
 
       const timeoutId = setTimeout(() => {
-        self.registration.showNotification(alarm.title, notifOptions);
+        self.registration.showNotification(alarm.title, notifOptions).catch(() => {});
       }, waitMs);
 
       activeAlarmTimeouts.push(timeoutId);
@@ -131,34 +129,37 @@ self.addEventListener('message', (event) => {
   if (event.data.type === 'SYNC_SCHEDULE') {
     scheduleAlarmsInWorker(event.data.alarms);
   } else if (event.data.type === 'TRIGGER_NOTIFICATION') {
-    self.registration.showNotification(event.data.title, event.data.options);
+    self.registration.showNotification(event.data.title, event.data.options).catch(() => {});
   } else if (event.data.type === 'SCHEDULE_TEST_ALARM') {
     const { delayMs, title, body } = event.data;
-    const targetEpoch = Date.now() + (delayMs || 5000);
+    const ms = delayMs || 8000;
 
     const testOptions = {
-      body: body || 'Harika! Telefon kilitliyken bildirim başarıyla iletildi.',
+      body: body || 'Harika! Telefon kilitliyken veya uygulama açıkken bildirim başarıyla iletildi.',
       icon: '/pwa-192x192.png',
       badge: '/pwa-192x192.png',
-      vibrate: [600, 250, 600, 250, 600],
+      vibrate: [500, 200, 500, 200, 500],
       requireInteraction: true,
       renotify: true,
       tag: 'test_lockscreen_alarm',
       data: { url: '/' },
     };
 
-    if (typeof TimestampTrigger !== 'undefined' && 'showTrigger' in Notification.prototype) {
-      try {
-        self.registration.showNotification(title || '💊 VitaRemind: Kilitli Ekran Testi', {
-          ...testOptions,
-          showTrigger: new TimestampTrigger(targetEpoch),
-        });
-      } catch {}
-    }
+    // Use event.waitUntil to guarantee browser does not kill Service Worker during countdown
+    const waitPromise = new Promise((resolve) => {
+      setTimeout(async () => {
+        try {
+          await self.registration.showNotification(title || '💊 VitaRemind: Kilitli Ekran Testi', testOptions);
+        } catch (err) {
+          console.warn('SW test notification delivery error:', err);
+        }
+        resolve();
+      }, ms);
+    });
 
-    setTimeout(() => {
-      self.registration.showNotification(title || '💊 VitaRemind: Kilitli Ekran Testi', testOptions);
-    }, delayMs || 5000);
+    if (event.waitUntil) {
+      event.waitUntil(waitPromise);
+    }
   }
 });
 
